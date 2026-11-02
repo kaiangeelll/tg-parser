@@ -141,6 +141,33 @@ body {
   letter-spacing: 0.5px;
 }
 
+.ai-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #38d39f;
+  background: rgba(56, 211, 159, 0.12);
+  border: 1px solid rgba(56, 211, 159, 0.3);
+  padding: 5px 12px;
+  border-radius: 20px;
+}
+
+.ai-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #38d39f;
+  box-shadow: 0 0 8px #38d39f;
+  animation: aiPulse 2s infinite;
+}
+
+@keyframes aiPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
 .top-actions {
   display: flex;
   align-items: center;

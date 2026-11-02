@@ -114,6 +114,7 @@ function normalizeChannel(raw) {
   
   const existing = catalog.get(id) || {};
   const isDirectProbe = raw._source === 'direct_probe';
+  const isAiMatched = raw._source === 'ai_matched';
 
   const channel = {
     ...existing,
@@ -123,11 +124,12 @@ function normalizeChannel(raw) {
     cleanHandle,
     name: raw.name || raw.title || cleanHandle || 'Канал',
     count: raw.memberCount ?? raw.count ?? existing.count ?? null,
-    description: raw.summary || raw.description || existing.description || (isDirectProbe ? 'Публичный Telegram-канал — нажми чтобы открыть ленту.' : 'Публичный Telegram-канал.'),
-    category: Array.isArray(raw.categories) && raw.categories.length ? raw.categories.join(', ') : (raw.category || raw.type || (isDirectProbe ? 'Канал (прямой поиск)' : 'Канал')),
+    description: raw.summary || raw.description || existing.description || (isAiMatched ? 'Канал найден через CarteLink ИИ анализ.' : (isDirectProbe ? 'Публичный Telegram-канал — нажми чтобы открыть ленту.' : 'Публичный Telegram-канал.')),
+    category: Array.isArray(raw.categories) && raw.categories.length ? raw.categories.join(', ') : (raw.category || raw.type || (isAiMatched ? 'ИИ совпадение' : (isDirectProbe ? 'Канал (прямой поиск)' : 'Канал'))),
     url: raw.telegramUrl || raw.url || `https://t.me/${cleanHandle}`,
     avatar: raw.avatar || raw.photo || null,
     isDirectProbe,
+    isAiMatched,
   };
   
   catalog.set(id, channel);
@@ -206,7 +208,7 @@ function renderCards() {
 
           <div class="channel-handle-row">
             <span>${esc(c.handle)}</span>
-            <span class="channel-cat-pill">${esc(c.category)}</span>
+            ${c.isAiMatched ? `<span class="channel-cat-pill" style="color:#38d39f;border-color:rgba(56,211,159,0.4);background:rgba(56,211,159,0.1);">🤖 Найдено ИИ</span>` : `<span class="channel-cat-pill">${esc(c.category)}</span>`}
           </div>
 
           <div class="channel-desc">${esc(c.description)}</div>
@@ -298,6 +300,9 @@ async function performSearch(queryText = '') {
     }
 
     currentResults = (data.results || []).map(normalizeChannel);
+    if (data.ai_used) {
+      $('#resultsHeading').innerHTML = `Результаты: «${esc(input)}» <span style="font-size:11.5px;color:#38d39f;font-weight:700;margin-left:8px;background:rgba(56,211,159,0.12);padding:2px 8px;border-radius:10px;">🤖 ИИ активен</span>`;
+    }
     if (!currentResults.length && !data.warning) {
       notify('По запросу ничего не найдено');
     }

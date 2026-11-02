@@ -209,14 +209,33 @@ def _probe_handle_via_jina(handle: str, timeout: int = 7) -> dict | None:
     }
 
 
+import ai_engine
+
 def smart_search(query: str, item_type: str = 'channel', category: str | None = None,
                  tgfind_rpc=None) -> dict:
     """
-    Multi-strategy search combining TGFind directory + direct handle probing.
+    Multi-strategy search combining AI predictions (CarteLink / OpenAI),
+    TGFind directory, and direct Telegram channel probing.
     """
     records: dict[str, dict] = {}
     terms = _search_terms(query)
     handle_candidates = _handle_candidates(query)
+
+    # ----------- STRATEGY 0: AI Query Intelligence -----------
+    ai_info = {'ai_used': False, 'handles': [], 'keywords': []}
+    try:
+        ai_info = ai_engine.get_ai_suggestions(query, timeout=3)
+        if ai_info.get('ai_used'):
+            # Prepend AI predicted handles (highest confidence)
+            for h in ai_info.get('handles', []):
+                if h not in handle_candidates:
+                    handle_candidates.insert(0, h)
+            # Add AI suggested keywords
+            for kw in ai_info.get('keywords', []):
+                if kw not in terms:
+                    terms.append(kw)
+    except Exception:
+        pass
 
     # ----------- STRATEGY 1: TGFind keyword search -----------
     type_val = item_type if item_type in ('channel', 'group', 'bot') else 'channel'
@@ -239,26 +258,25 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
                 break
         except urllib.error.HTTPError as e:
             if e.code in (403, 429):
-                # rate limited — stop keyword search
                 break
         except Exception:
             pass
 
     # ----------- STRATEGY 2: Direct handle probing -----------
-    # Only run if query looks like a name (not a pure topic like "новости")
-    # Heuristic: if it has uppercase/mixed case or underscore, likely a name
+    # Run if query looks like a name or if AI generated candidate handles
     looks_like_name = (
-        bool(re.search(r'[A-ZА-Я]', query))  # Has uppercase
+        ai_info.get('ai_used')
+        or bool(re.search(r'[A-ZА-Я]', query))
         or '_' in query
-        or len(query.split()) <= 3            # Short query = probably a name
+        or len(query.split()) <= 4
     )
 
-    if looks_like_name and handle_candidates:
-        # Run probes concurrently, timeout per probe is short (6s)
-        with ThreadPoolExecutor(max_workers=min(len(handle_candidates), 4)) as pool:
+    probed_handles = handle_candidates[:8]
+    if looks_like_name and probed_handles:
+        with ThreadPoolExecutor(max_workers=min(len(probed_handles), 5)) as pool:
             future_map = {
                 pool.submit(_probe_handle_via_jina, h, 6): h
-                for h in handle_candidates
+                for h in probed_handles
             }
             for future in as_completed(future_map, timeout=12):
                 try:
@@ -266,6 +284,8 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
                     if result:
                         key = result['handle'].lower()
                         if key not in records:
+                            if key in ai_info.get('handles', []):
+                                result['_source'] = 'ai_matched'
                             records[key] = result
                 except Exception:
                     pass
@@ -292,8 +312,10 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
             else:
                 if any(variant in summary for variant in [word, word_lat]):
                     pts += 2
-        # Bonus for channels found via direct probe (exact name match)
-        if row.get('_source') == 'direct_probe':
+        # Bonus for AI and direct matched handles
+        if row.get('_source') == 'ai_matched':
+            pts += 6
+        elif row.get('_source') == 'direct_probe':
             pts += 3
         return pts
 
@@ -304,7 +326,9 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
 
     return {
         'results': results,
-        'source': 'TGFind + direct probe',
+        'source': 'AI + TGFind + direct probe',
         'terms': terms,
-        'handle_candidates_tried': handle_candidates,
+        'ai_used': ai_info.get('ai_used', False),
+        'ai_model': ai_info.get('model', 'CarteLink AI (8317)'),
+        'handle_candidates_tried': probed_handles,
     }
