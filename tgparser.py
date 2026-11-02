@@ -72,21 +72,29 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
     for chunk, post_id in message_chunks:
         num_id = post_id.split('/')[-1] if '/' in post_id else post_id
         
-        text_m = re.search(r'<div[^>]*class="[^"]*tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)</div>', chunk)
+        # Remove reactions container so reaction emoji icons are never parsed as images or text
+        clean_chunk = re.sub(r'<div[^>]*class="[^"]*(?:tgme_widget_message_reactions|reactions|tgme_reaction)[^"]*"[\s\S]*?</div>', '', chunk, flags=re.IGNORECASE)
+
+        text_m = re.search(r'<div[^>]*class="[^"]*tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)</div>', clean_chunk)
         text = ''
         if text_m:
             text = html.unescape(re.sub(r'<br\s*/?>', '\n', text_m.group(1)))
             text = re.sub(r'<[^>]+>', '', text).strip()
 
-        time_m = re.search(r'<time[^>]*datetime="([^"]+)"[^>]*>([\s\S]*?)</time>', chunk)
+        time_m = re.search(r'<time[^>]*datetime="([^"]+)"[^>]*>([\s\S]*?)</time>', clean_chunk)
         date_iso = time_m.group(1) if time_m else ''
         date_text = html.unescape(time_m.group(2)).strip() if time_m else ''
 
-        views_m = re.search(r'<span[^>]*class="[^"]*tgme_widget_message_views[^"]*"[^>]*>([\s\S]*?)</span>', chunk)
+        views_m = re.search(r'<span[^>]*class="[^"]*tgme_widget_message_views[^"]*"[^>]*>([\s\S]*?)</span>', clean_chunk)
         views = html.unescape(views_m.group(1)).strip() if views_m else ''
 
-        photos = re.findall(r"background-image:url\('([^']+)'\)", chunk)
-        videos = re.findall(r'<video[^>]*src="([^"]+)"', chunk)
+        # Extract only real post media photos and video thumbnails (no reactions!)
+        photos = re.findall(r'class="[^"]*(?:tgme_widget_message_photo_wrap|tgme_widget_message_video_thumb|media_photo)[^"]*"[^>]*style="[^"]*background-image:url\(\'([^\']+)\'\)', clean_chunk)
+        if not photos:
+            all_bg = re.findall(r"background-image:url\('([^']+)'\)", clean_chunk)
+            photos = [u for u in all_bg if not re.search(r'reaction|emoji|thumb_reaction', u, re.IGNORECASE)]
+
+        videos = re.findall(r'<video[^>]*src="([^"]+)"', clean_chunk)
 
         posts.append({
             'id': num_id,
@@ -155,13 +163,14 @@ def _parse_jina_preview(handle: str, md: str) -> dict:
         end_idx = unique_anchors[i + 1].start() if i + 1 < len(unique_anchors) else len(md_body)
         block = md_body[start_idx:end_idx]
 
-        # Extract images
+        # Extract images (exclude reactions and avatar)
         raw_imgs = re.findall(r'!\[[^\]]*\]\((https?://[^)]+)\)', block)
         images = []
         for img in raw_imgs:
             clean_img = re.sub(r'\\([_\-])', r'\1', img)
             if clean_img != avatar_url and clean_img not in images:
-                images.append(clean_img)
+                if not re.search(r'reaction|emoji|thumb_reaction', clean_img, re.IGNORECASE):
+                    images.append(clean_img)
 
         # Views
         views_m = re.search(r'([\d.,]+[KMB]?)\s+views', block, re.IGNORECASE)
@@ -188,7 +197,11 @@ def _parse_jina_preview(handle: str, md: str) -> dict:
         clean_text = block
         clean_text = re.sub(r'\[_?!\[Image \d+\]\([^)]+\)_?\]\([^)]+\)\s*', '', clean_text)
         clean_text = re.sub(r'!\[[^\]]*\]\([^)]+\)\s*', '', clean_text)
+        # Strip all reactions lines (e.g. _**🔥**_ 36 _**👍**_ 27 _**❤️**_ 4 or 19.4K 46.7K)
+        clean_text = re.sub(r'(?:_\*\*[^\n*]+\*\*_\s*)+[\d\s.,KMB]+', '', clean_text)
+        clean_text = re.sub(r'_[*]{2}.*?[*]{2}_\s*(?:\d+[KMB]?\s*)+', '', clean_text)
         clean_text = re.sub(r'_?\*+[\s\S]*?\*+_?\s*(?:\d+[KMB]?\s*)+', '', clean_text)
+        clean_text = re.sub(r'\n+\s*(?:_\*\*[^\n*]+\*\*_\s*|\d+[KMB]?\s*)+\s*$', '', clean_text)
         clean_text = re.sub(r'[\d.,]+[KMB]?\s+views.*$', '', clean_text, flags=re.MULTILINE)
         clean_text = re.sub(r'\\([_*\[\]()~`>#+\-=|{}.!])', r'\1', clean_text)
         clean_text = re.sub(r'\*\*(.+?)\*\*', r'\1', clean_text)

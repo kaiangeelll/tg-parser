@@ -99,7 +99,11 @@ function formatPostHtml(rawText, currentHandle) {
     return `<a href="${match}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline;">${match}</a>`;
   });
 
-  return safe;
+  // Strip trailing reaction lines (e.g. _**🔥**_ 36 _**👍**_ 27)
+  safe = safe.replace(/(?:\s*_[*]{2}[^*]+[*]{2}_\s*[\d.,KMB]*)+\s*$/gi, '');
+  safe = safe.replace(/\n+\s*(?:_\*\*[^\n*]+\*\*_\s*|\d+[KMB]?\s*)+\s*$/gi, '');
+
+  return safe.trim();
 }
 
 // Normalize channel record
@@ -460,12 +464,14 @@ function renderPosts() {
 
     const formattedBody = formatPostHtml(p.text, currentChannelData ? currentChannelData.cleanHandle : '');
     
-    // Images media grid
+    // Filter out reaction images and small emoji stickers
+    const validImages = (p.images || []).filter(img => !/reaction|emoji|thumb_reaction/i.test(img));
+    
     let mediaHtml = '';
-    if (p.images && p.images.length) {
+    if (validImages.length) {
       mediaHtml = `
         <div class="post-media-grid">
-          ${p.images.map(img => `<img src="${esc(img)}" alt="" loading="lazy" onclick="window.open('${esc(img)}', '_blank')">`).join('')}
+          ${validImages.map(img => `<img src="${esc(img)}" alt="" loading="lazy" onclick="window.open('${esc(img)}', '_blank')">`).join('')}
         </div>
       `;
     }
