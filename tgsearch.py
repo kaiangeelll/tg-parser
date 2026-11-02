@@ -386,6 +386,7 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
     clean_q_lower = re.sub(r'[\s_\-]+', ' ', query.lower()).strip()
     words = [w for w in re.findall(r'[\w@-]{2,}', query.lower(), flags=re.UNICODE) if w not in _STOP]
     curated_handles = [h.lower() for h in _KNOWN_CHANNELS.get(clean_q_lower, [])]
+    is_plain_name = not query.strip().startswith('@')
 
     def score(row: dict) -> int:
         name = (row.get('name') or '').lower()
@@ -393,31 +394,33 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
         summary = (row.get('summary') or '').lower()
         pts = 0
 
-        # Exact title match gets massive priority
+        # Exact title / display name match (the title displayed next to avatar)
         name_clean = re.sub(r'[\s_\-]+', ' ', name).strip()
         if name_clean == clean_q_lower:
-            pts += 40
+            pts += 60
         elif clean_q_lower and clean_q_lower in name_clean:
-            pts += 25
+            pts += 40
+        elif name_clean and name_clean in clean_q_lower:
+            pts += 30
 
-        # Curated creator handles
+        # Curated creator handles for this specific name
         if handle in curated_handles or any(ch in handle for ch in curated_handles):
-            pts += 35
+            pts += 45
 
+        # Check words in name (primary) vs in handle (secondary)
         for word in words:
             word_lat = _translit(word)
-            for variant in [word, word_lat]:
-                if not variant:
-                    continue
-                if variant in name:
-                    pts += 10
-                    break
-                elif variant in handle:
-                    pts += 8
-                    break
-            else:
-                if any(variant in summary for variant in [word, word_lat]):
-                    pts += 2
+            variants = [word]
+            if word_lat and word_lat != word:
+                variants.append(word_lat)
+
+            # Prioritize display name over handle when query has no @
+            if any(v in name for v in variants):
+                pts += (20 if is_plain_name else 10)
+            elif any(v in handle for v in variants):
+                pts += (5 if is_plain_name else 10)
+            elif any(v in summary for v in variants):
+                pts += 2
 
         # Bonus for AI and direct matched handles
         if row.get('_source') == 'ai_matched':

@@ -53,14 +53,16 @@ class Handler(BaseHTTPRequestHandler):
 
         # API: /api/posts
         if parsed.path == '/api/posts':
-            handle = parse_qs(parsed.query).get('handle', [''])[0].lstrip('@').strip()
+            query_map = parse_qs(parsed.query)
+            handle = query_map.get('handle', [''])[0].lstrip('@').strip()
+            before = query_map.get('before', [''])[0].strip() or None
             handle = re.sub(r'^(?:https?:\/\/)?(?:www\.)?t\.me\/', '', handle, flags=re.IGNORECASE)
             handle = handle.split('/')[0].split('?')[0].strip()
             
             if not re.fullmatch(r'[A-Za-z0-9_]{3,32}', handle):
                 return self.send_json(400, {'error': 'Некорректное публичное имя канала'})
             try:
-                data = tgparser.parse_telegram_preview(handle)
+                data = tgparser.parse_telegram_preview(handle, before=before)
                 return self.send_json(200, data)
             except Exception as e:
                 return self.send_json(502, {'error': str(e)})

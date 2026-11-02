@@ -17,6 +17,7 @@ class handler(HandlerMixin, BaseHTTPRequestHandler):
     def do_GET(self):
         query_params = parse_qs(urlparse(self.path).query)
         handle = query_params.get('handle', [''])[0].lstrip('@').strip()
+        before = query_params.get('before', [''])[0].strip() or None
         
         # Clean potential t.me/ links
         handle = re.sub(r'^(?:https?:\/\/)?(?:www\.)?t\.me\/', '', handle, flags=re.IGNORECASE)
@@ -26,7 +27,7 @@ class handler(HandlerMixin, BaseHTTPRequestHandler):
             return self.send_json(400, {'error': 'Некорректное публичное имя канала или ссылка'})
             
         try:
-            data = parse_telegram_preview(handle)
+            data = parse_telegram_preview(handle, before=before)
             return self.send_json(200, data)
         except Exception as e:
             return self.send_json(502, {'error': str(e) or 'Не удалось загрузить посты канала'})

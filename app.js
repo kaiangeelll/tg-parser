@@ -12,7 +12,7 @@ let currentQuery = '';
 let isSearching = false;
 let currentChannelData = null;
 let currentPostsData = [];
-let isAscendingOrder = true; // true = TG style (top: older, bottom: newer)
+let isAscendingOrder = false; // false = newest first (от новых к старым), true = oldest first
 let filterPostText = '';
 
 // Fallback initial recommendations
@@ -127,7 +127,7 @@ function normalizeChannel(raw) {
     description: raw.summary || raw.description || existing.description || (isAiMatched ? 'Канал найден через CarteLink ИИ анализ.' : (isDirectProbe ? 'Публичный Telegram-канал — нажми чтобы открыть ленту.' : 'Публичный Telegram-канал.')),
     category: Array.isArray(raw.categories) && raw.categories.length ? raw.categories.join(', ') : (raw.category || raw.type || (isAiMatched ? 'ИИ совпадение' : (isDirectProbe ? 'Канал (прямой поиск)' : 'Канал'))),
     url: raw.telegramUrl || raw.url || `https://t.me/${cleanHandle}`,
-    avatar: raw.avatar || raw.photo || null,
+    avatar: raw.avatar || raw.avatarUrl || raw.photo || existing.avatar || null,
     isDirectProbe,
     isAiMatched,
   };
@@ -191,7 +191,7 @@ function renderCards() {
     const saved = isSaved(c.id);
     const initial = (c.name || c.cleanHandle || '?')[0].toUpperCase();
     const avatarHtml = c.avatar 
-      ? `<img src="${esc(c.avatar)}" alt="" loading="lazy">` 
+      ? `<img src="${esc(c.avatar)}" alt="${esc(c.name)}" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">` 
       : initial;
 
     return `
@@ -350,6 +350,34 @@ async function fetchSingleChannel(value) {
   }
 }
 
+// Helper to update channel avatar across DOM elements
+function updateChannelAvatarInDom(cleanHandle, avatarUrl) {
+  if (!cleanHandle || !avatarUrl) return;
+  const id = cleanHandle.toLowerCase();
+  const ch = catalog.get(id);
+  if (ch) ch.avatar = avatarUrl;
+  const saved = savedChannels.find(s => s.id === id);
+  if (saved) {
+    saved.avatar = avatarUrl;
+    localStorage.setItem('tg_saved_channels', JSON.stringify(savedChannels));
+  }
+
+  // Update modal avatar
+  const modalAvatar = $('#modalChannelHead')?.querySelector('.modal-avatar');
+  if (modalAvatar) {
+    modalAvatar.innerHTML = `<img src="${esc(avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none';">`;
+  }
+
+  // Update card avatar in search results
+  const card = document.querySelector(`.channel-card[data-channel-id="${id}"]`);
+  if (card) {
+    const cardAvatar = card.querySelector('.channel-avatar');
+    if (cardAvatar) {
+      cardAvatar.innerHTML = `<img src="${esc(avatarUrl)}" alt="" loading="lazy" onerror="this.style.display='none';">`;
+    }
+  }
+}
+
 // Open Channel Modal
 async function openChannelModal(id) {
   const channel = catalog.get(id) || savedChannels.find(c => c.id === id);
@@ -362,11 +390,11 @@ async function openChannelModal(id) {
 
   const initial = (channel.name || channel.cleanHandle || '?')[0].toUpperCase();
   const avatarHtml = channel.avatar 
-    ? `<img src="${esc(channel.avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;">` 
+    ? `<img src="${esc(channel.avatar)}" alt="${esc(channel.name)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">` 
     : initial;
 
   $('#modalChannelHead').innerHTML = `
-    <div class="modal-avatar" style="width:48px;height:48px;border-radius:14px;overflow:hidden;flex-shrink:0;">${avatarHtml}</div>
+    <div class="modal-avatar" style="width:52px;height:52px;border-radius:14px;overflow:hidden;flex-shrink:0;">${avatarHtml}</div>
     <div style="min-width:0;">
       <div class="modal-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px;">${esc(channel.name)}</div>
       <div class="modal-handle">${esc(channel.handle)} ${channel.count != null ? '· ' + formatSubs(channel.count) + ' подписчиков' : ''}</div>
@@ -394,22 +422,32 @@ async function openChannelModal(id) {
     const res = await fetch(`/api/posts?handle=${encodeURIComponent(channel.cleanHandle)}`);
     const data = await res.json();
     
-    if (data.channel && data.channel.avatar && !channel.avatar) {
-      channel.avatar = data.channel.avatar;
-      $('#modalChannelHead').querySelector('.modal-avatar').innerHTML = `<img src="${esc(channel.avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;">`;
+    if (data.channel) {
+      if (data.channel.avatar) {
+        channel.avatar = data.channel.avatar;
+        updateChannelAvatarInDom(channel.cleanHandle, data.channel.avatar);
+      }
+      if (data.channel.name && (!channel.name || channel.name === channel.cleanHandle)) {
+        channel.name = data.channel.name;
+        const titleEl = $('#modalChannelHead')?.querySelector('.modal-title');
+        if (titleEl) titleEl.textContent = channel.name;
+      }
     }
 
     if (data.posts && data.posts.length) {
       currentPostsData = data.posts;
       renderPosts();
       
-      // Auto-scroll to the bottom in Telegram mode (newest messages)
-      if (isAscendingOrder) {
-        setTimeout(() => {
-          const container = $('#postsContainer');
+      // Auto-scroll depending on order:
+      // If ascending (TG bottom-up), scroll to bottom. If descending (newest first), start at top.
+      setTimeout(() => {
+        const container = $('#postsContainer');
+        if (isAscendingOrder) {
           container.scrollTop = container.scrollHeight;
-        }, 120);
-      }
+        } else {
+          container.scrollTop = 0;
+        }
+      }, 100);
     } else {
       $('#postsContainer').innerHTML = `
         <div class="empty-box" style="padding: 40px 0;">
@@ -428,6 +466,105 @@ async function openChannelModal(id) {
   }
 }
 
+// Refresh channel posts (fetching latest from Telegram)
+let isRefreshing = false;
+async function refreshChannelPosts() {
+  if (!currentChannelData || isRefreshing) return;
+  isRefreshing = true;
+  const icon = $('#refreshIcon');
+  if (icon) icon.classList.add('spinning');
+  $('#refreshBtnText').textContent = 'Обновление...';
+
+  try {
+    const res = await fetch(`/api/posts?handle=${encodeURIComponent(currentChannelData.cleanHandle)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка обновления');
+
+    if (data.channel && data.channel.avatar) {
+      currentChannelData.avatar = data.channel.avatar;
+      updateChannelAvatarInDom(currentChannelData.cleanHandle, data.channel.avatar);
+    }
+
+    if (data.posts && data.posts.length) {
+      const existingIds = new Set(currentPostsData.map(p => String(p.id)));
+      let added = 0;
+      data.posts.forEach(np => {
+        if (!existingIds.has(String(np.id))) {
+          currentPostsData.push(np);
+          added++;
+        }
+      });
+      renderPosts();
+      notify(added > 0 ? `Обновлено! Добавлено ${added} новых постов` : 'Лента проверена: вы видите самые свежие посты');
+    } else {
+      notify('Лента проверена: новых постов нет');
+    }
+  } catch (err) {
+    notify('Ошибка обновления: ' + err.message);
+  } finally {
+    isRefreshing = false;
+    if (icon) icon.classList.remove('spinning');
+    $('#refreshBtnText').textContent = 'Обновить';
+  }
+}
+
+// Load older posts (pagination)
+let isLoadingOlder = false;
+async function loadOlderPosts() {
+  if (!currentChannelData || isLoadingOlder || !currentPostsData.length) return;
+  isLoadingOlder = true;
+  const btn = $('#btnLoadOlderPosts');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Загрузка более ранних постов...';
+  }
+
+  const numericIds = currentPostsData
+    .map(p => parseInt(p.id, 10))
+    .filter(n => !isNaN(n) && n > 0);
+  const minId = numericIds.length ? Math.min(...numericIds) : null;
+
+  if (!minId || minId <= 1) {
+    notify('Вы дошли до самого первого поста канала!');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '✅ Все посты канала загружены';
+    }
+    isLoadingOlder = false;
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/posts?handle=${encodeURIComponent(currentChannelData.cleanHandle)}&before=${minId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
+
+    const olderPosts = data.posts || [];
+    const existingIds = new Set(currentPostsData.map(p => String(p.id)));
+    const newItems = olderPosts.filter(p => !existingIds.has(String(p.id)));
+
+    if (newItems.length) {
+      currentPostsData.push(...newItems);
+      renderPosts();
+      notify(`Загружено ещё ${newItems.length} ранних постов (всего: ${currentPostsData.length})`);
+    } else {
+      notify('Более ранних постов не найдено');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '✅ Все посты канала загружены';
+      }
+    }
+  } catch (err) {
+    notify('Не удалось загрузить старые посты: ' + err.message);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '📥 Попробовать снова';
+    }
+  } finally {
+    isLoadingOlder = false;
+  }
+}
+
 // Render posts in chat view
 function renderPosts() {
   const container = $('#postsContainer');
@@ -439,7 +576,7 @@ function renderPosts() {
     list = list.filter(p => (p.text || '').toLowerCase().includes(f) || String(p.id).includes(f));
   }
 
-  // Sort: ascending (TG style: oldest top, newest bottom) or descending
+  // Sort: isAscendingOrder (true = oldest first, false = newest first)
   list.sort((a, b) => {
     const numA = parseInt(a.id, 10) || 0;
     const numB = parseInt(b.id, 10) || 0;
@@ -456,7 +593,15 @@ function renderPosts() {
     return;
   }
 
-  let htmlOutput = '';
+  const paginationButtonHtml = `
+    <div class="load-older-wrap" style="text-align: center; padding: 20px 0;">
+      <button id="btnLoadOlderPosts" class="btn-pill primary" style="margin: 0 auto; padding: 11px 26px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(47, 129, 247, 0.25);">
+        📥 Загрузить более ранние сообщения
+      </button>
+    </div>
+  `;
+
+  let htmlOutput = isAscendingOrder ? paginationButtonHtml : '';
   let lastDatePill = '';
 
   list.forEach(p => {
@@ -512,7 +657,17 @@ function renderPosts() {
     `;
   });
 
+  if (!isAscendingOrder) {
+    htmlOutput += paginationButtonHtml;
+  }
+
   container.innerHTML = htmlOutput;
+
+  // Bind pagination button
+  const loadBtn = $('#btnLoadOlderPosts');
+  if (loadBtn) {
+    loadBtn.onclick = loadOlderPosts;
+  }
 }
 
 // Export JSON
@@ -547,17 +702,40 @@ function copyAllPosts() {
 }
 
 // Jump to internal post inside chat
-function jumpToPost(postId) {
-  const target = document.getElementById(`post-bubble-${postId}`);
+async function jumpToPost(postId) {
+  let target = document.getElementById(`post-bubble-${postId}`);
   if (target) {
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     target.classList.remove('highlighted');
-    void target.offsetWidth; // trigger reflow
+    void target.offsetWidth;
     target.classList.add('highlighted');
     notify(`Переход к сообщению #${postId}`);
-  } else {
-    notify(`Сообщение #${postId} находится за пределами текущей выборки.`);
+    return;
   }
+
+  // If not in current view, attempt to fetch range around that post ID
+  if (currentChannelData) {
+    notify(`Загружаем сообщение #${postId}...`);
+    try {
+      const res = await fetch(`/api/posts?handle=${encodeURIComponent(currentChannelData.cleanHandle)}&before=${parseInt(postId, 10) + 12}`);
+      const data = await res.json();
+      if (data.posts && data.posts.length) {
+        const existingIds = new Set(currentPostsData.map(p => String(p.id)));
+        data.posts.forEach(np => {
+          if (!existingIds.has(String(np.id))) currentPostsData.push(np);
+        });
+        renderPosts();
+        target = document.getElementById(`post-bubble-${postId}`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.classList.add('highlighted');
+          notify(`Переход к сообщению #${postId}`);
+          return;
+        }
+      }
+    } catch (e) {}
+  }
+  notify(`Сообщение #${postId} не найдено или удалено.`);
 }
 
 // Event Listeners Setup
@@ -627,17 +805,25 @@ function initEvents() {
     if (e.target === $('#channelModal')) $('#channelModal').classList.remove('open');
   };
 
+  // Refresh posts button
+  const refreshBtn = $('#modalRefreshPosts');
+  if (refreshBtn) {
+    refreshBtn.onclick = refreshChannelPosts;
+  }
+
   // Order switch
   $('#modalOrderToggle').onclick = () => {
     isAscendingOrder = !isAscendingOrder;
-    $('#orderToggleText').textContent = isAscendingOrder ? '⬆ Снизу вверх (как в TG)' : '⬇ Сверху вниз (новые первыми)';
+    $('#orderToggleText').textContent = isAscendingOrder ? '⬆ Снизу вверх (как в TG)' : '⬇ Сверху новые (от новых к старым)';
     renderPosts();
-    if (isAscendingOrder) {
-      setTimeout(() => {
-        const c = $('#postsContainer');
+    setTimeout(() => {
+      const c = $('#postsContainer');
+      if (isAscendingOrder) {
         c.scrollTop = c.scrollHeight;
-      }, 50);
-    }
+      } else {
+        c.scrollTop = 0;
+      }
+    }, 50);
   };
 
   // Search within posts

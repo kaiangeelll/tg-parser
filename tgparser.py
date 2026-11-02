@@ -27,12 +27,14 @@ def _fetch(url: str, timeout: int = 12) -> str:
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode('utf-8', errors='ignore')
 
-def parse_telegram_preview(handle: str) -> dict:
+def parse_telegram_preview(handle: str, before: str | int = None) -> dict:
     handle = handle.lstrip('@').strip()
     handle = re.sub(r'^(?:https?://)?(?:www\.)?t\.me/', '', handle, flags=re.IGNORECASE)
     handle = handle.split('/')[0].split('?')[0].strip()
 
     direct_url = f'https://t.me/s/{handle}'
+    if before:
+        direct_url += f'?before={before}'
     
     # Try direct fetch first (works on Vercel / unblocked network)
     try:
