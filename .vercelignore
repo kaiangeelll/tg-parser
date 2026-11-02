@@ -1,0 +1,6 @@
+server.py
+start.bat
+README.txt
+__pycache__/
+*.pyc
+.git
