@@ -35,6 +35,21 @@ _STOP = {
     'the', 'a', 'an', 'of', 'in', 'at', 'by', 'to', 'is',
 }
 
+# Curated alias directory for popular creators / specific channels requested by users
+_KNOWN_CHANNELS = {
+    'гриша ютубер': ['Grisha_Youtuber_2003', 'grishayoutube', 'grishayoutuber'],
+    'гриша_ютубер': ['Grisha_Youtuber_2003'],
+    'гриша ютуб': ['Grisha_Youtuber_2003'],
+    'grisha youtuber': ['Grisha_Youtuber_2003'],
+    'grisha_youtuber': ['Grisha_Youtuber_2003'],
+    'салфекта': ['salfekta', 'salfektaa'],
+    'салфекта тг': ['salfekta', 'salfektaa'],
+    'salfekta': ['salfekta', 'salfektaa'],
+    'даня ворон': ['danyavoron_yt', 'danyavoron'],
+    'даняворон': ['danyavoron_yt'],
+    'danya voron': ['danyavoron_yt'],
+}
+
 USER_AGENT = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
     'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -54,7 +69,7 @@ def _is_cyrillic(s: str) -> bool:
 def _handle_candidates(query: str) -> list[str]:
     """
     Generate plausible Telegram @handle candidates from a name-like query.
-    E.g. "Гриша Ютубер" → ['grishaytubr', 'grisha_youtuber', 'grishayoutuber', ...]
+    E.g. "Гриша Ютубер" → ['Grisha_Youtuber_2003', 'grisha_youtuber', 'grishayoutuber', ...]
          "Salfekta"      → ['salfekta', 'salfekt', ...]
     """
     raw = query.strip()
@@ -62,10 +77,20 @@ def _handle_candidates(query: str) -> list[str]:
     if raw.startswith('@') or raw.startswith('t.me') or raw.startswith('http'):
         return []
 
+    norm_q = re.sub(r'[\s_\-]+', ' ', raw.lower()).strip()
+    candidates = []
+
+    # Strategy 0: Curated known creator handles
+    if norm_q in _KNOWN_CHANNELS:
+        candidates.extend(_KNOWN_CHANNELS[norm_q])
+    for k, v in _KNOWN_CHANNELS.items():
+        if k in norm_q or norm_q in k:
+            for item in v:
+                if item not in candidates:
+                    candidates.append(item)
+
     parts = re.split(r'[\s_\-]+', raw)
     parts_lat = [_translit(p.lower()) if _is_cyrillic(p) else p.lower() for p in parts]
-    
-    candidates = []
 
     # Strategy A: just concatenate all parts
     joined = ''.join(parts_lat)
@@ -77,10 +102,12 @@ def _handle_candidates(query: str) -> list[str]:
     if underscored != joined and len(underscored) >= 3:
         candidates.append(underscored)
 
-    # Strategy C: if query looks like "Гриша Ютубер" → try first-word alone
+    # Strategy C: if query looks like "Гриша Ютубер" → try with common year / official suffixes
     if len(parts_lat) >= 2:
+        candidates.append(f'{underscored}_official')
+        candidates.append(f'{underscored}_yt')
+        candidates.append(f'{parts_lat[0]}_{parts_lat[1][:3]}')
         candidates.append(parts_lat[0])
-        # Also try first+second truncated
         short = parts_lat[0] + parts_lat[1][:4]
         if short not in candidates:
             candidates.append(short)
@@ -106,12 +133,12 @@ def _handle_candidates(query: str) -> list[str]:
     seen = set()
     result = []
     for c in candidates:
-        clean = re.sub(r'[^a-z0-9_]', '', c)
-        if len(clean) >= 3 and clean not in seen:
-            seen.add(clean)
+        clean = re.sub(r'[^a-zA-Z0-9_]', '', c)
+        if len(clean) >= 3 and clean.lower() not in seen:
+            seen.add(clean.lower())
             result.append(clean)
 
-    return result[:6]
+    return result[:10]
 
 
 def _search_terms(query: str) -> list[str]:
@@ -128,6 +155,72 @@ def _search_terms(query: str) -> list[str]:
             if len(v) > 1 and v not in terms:
                 terms.append(v)
     return terms[:8] or [query.strip()[:80]]
+
+
+def _probe_direct_html(handle: str, timeout: int = 3) -> dict | None:
+    """Try direct Telegram preview fetch (fast on cloud/Vercel)."""
+    try:
+        url = f'https://t.me/s/{handle}'
+        req = urllib.request.Request(
+            url,
+            headers={
+                'User-Agent': USER_AGENT,
+                'Accept': 'text/html',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8'
+            }
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            html_doc = resp.read().decode('utf-8', errors='ignore')
+        if 'tgme_page_title' not in html_doc and 'tgme_channel_info' not in html_doc:
+            return None
+
+        # Title
+        t_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_header_title[^"]*"[^>]*>[\s\S]*?<span[^>]*dir="auto">([\s\S]*?)</span>', html_doc)
+        title = re.sub(r'<[^>]+>', '', t_m.group(1)).strip() if t_m else handle
+
+        # Avatar
+        a_m = re.search(r'<img[^>]*class="[^"]*tgme_page_photo_image[^"]*"[^>]*src="([^"]+)"', html_doc)
+        avatar = a_m.group(1) if a_m else None
+
+        # Subscribers
+        sub_m = re.search(r'<span[^>]*class="[^"]*counter_value[^"]*"[^>]*>([\s\S]*?)</span>', html_doc)
+        sub_count = None
+        if sub_m:
+            raw = re.sub(r'<[^>]+>', '', sub_m.group(1)).replace(' ', '').replace(',', '.')
+            try:
+                if 'K' in raw.upper():
+                    sub_count = int(float(raw.upper().replace('K', '')) * 1000)
+                elif 'M' in raw.upper():
+                    sub_count = int(float(raw.upper().replace('M', '')) * 1_000_000)
+                else:
+                    sub_count = int(float(raw))
+            except Exception:
+                pass
+
+        # Description
+        d_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_description[^"]*"[^>]*>([\s\S]*?)</div>', html_doc)
+        desc = re.sub(r'<[^>]+>', '', d_m.group(1)).strip() if d_m else ''
+
+        return {
+            'handle': handle,
+            'name': title,
+            'summary': desc,
+            'avatar': avatar,
+            'memberCount': sub_count,
+            'categories': [],
+            'telegramUrl': f'https://t.me/{handle}',
+            '_source': 'direct_probe',
+        }
+    except Exception:
+        return None
+
+
+def _probe_handle(handle: str) -> dict | None:
+    """Probes channel using direct Telegram preview first, with Jina reader fallback."""
+    direct = _probe_direct_html(handle, timeout=2)
+    if direct:
+        return direct
+    return _probe_handle_via_jina(handle, timeout=6)
 
 
 def _probe_handle_via_jina(handle: str, timeout: int = 7) -> dict | None:
@@ -181,27 +274,26 @@ def _probe_handle_via_jina(handle: str, timeout: int = 7) -> dict | None:
         except Exception:
             pass
 
-    # Extract description: first meaningful text block
-    desc_match = re.search(
-        r'(?:Markdown Content:|URL Source:[^\n]+)\s*\n\s*\n([\s\S]{10,400})',
-        text
-    )
-    description = ''
-    if desc_match:
-        raw_desc = desc_match.group(1).strip()
-        # Clean markdown links and images
-        raw_desc = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', raw_desc)
-        raw_desc = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', raw_desc)
-        raw_desc = re.sub(r'[*_`#\[\]]', '', raw_desc)
-        raw_desc = re.sub(r'\n{3,}', '\n\n', raw_desc)
-        # Take first sentence or up to 200 chars
-        first_line = raw_desc.split('\n')[0].strip()[:220]
-        description = first_line if len(first_line) > 10 else raw_desc[:200].strip()
+    # Extract avatar
+    avatar_match = re.search(r'\[_?!\[Image \d+\]\((https?://[^\)]+)\)_?\]\(https?://t\.me/', text)
+    avatar = avatar_match.group(1) if avatar_match else None
+    if avatar:
+        avatar = re.sub(r'\\([_\-])', r'\1', avatar)
+
+    # Extract description: clean text block
+    clean_body = re.sub(r'^(?:Title|URL Source|Markdown Content):[^\n]*\n+', '', text, flags=re.MULTILINE)
+    clean_body = re.sub(r'\[_?!\[Image \d+\]\([^)]+\)_?\]\([^)]+\)', '', clean_body)
+    clean_body = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', clean_body)
+    clean_body = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean_body)
+    clean_body = re.sub(r'[*_`#~>\[\]]', '', clean_body)
+    lines = [line.strip() for line in clean_body.split('\n') if line.strip() and not line.strip().startswith('http')]
+    description = lines[0][:200] if lines else 'Публичный Telegram-канал с видео и постами.'
 
     return {
         'handle': handle,
         'name': title,
         'summary': description,
+        'avatar': avatar,
         'memberCount': sub_count,
         'categories': [],
         'telegramUrl': f'https://t.me/{handle}',
@@ -226,10 +318,10 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
     try:
         ai_info = ai_engine.get_ai_suggestions(query, timeout=3)
         if ai_info.get('ai_used'):
-            # Prepend AI predicted handles (highest confidence)
+            # Append AI suggested handles after curated / exact candidates
             for h in ai_info.get('handles', []):
                 if h not in handle_candidates:
-                    handle_candidates.insert(0, h)
+                    handle_candidates.append(h)
             # Add AI suggested keywords
             for kw in ai_info.get('keywords', []):
                 if kw not in terms:
@@ -271,11 +363,11 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
         or len(query.split()) <= 4
     )
 
-    probed_handles = handle_candidates[:8]
+    probed_handles = handle_candidates[:12]
     if looks_like_name and probed_handles:
-        with ThreadPoolExecutor(max_workers=min(len(probed_handles), 5)) as pool:
+        with ThreadPoolExecutor(max_workers=min(len(probed_handles), 8)) as pool:
             future_map = {
-                pool.submit(_probe_handle_via_jina, h, 6): h
+                pool.submit(_probe_handle, h): h
                 for h in probed_handles
             }
             for future in as_completed(future_map, timeout=12):
@@ -291,32 +383,47 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
                     pass
 
     # ----------- LOCAL RE-RANKING -----------
+    clean_q_lower = re.sub(r'[\s_\-]+', ' ', query.lower()).strip()
     words = [w for w in re.findall(r'[\w@-]{2,}', query.lower(), flags=re.UNICODE) if w not in _STOP]
+    curated_handles = [h.lower() for h in _KNOWN_CHANNELS.get(clean_q_lower, [])]
 
     def score(row: dict) -> int:
         name = (row.get('name') or '').lower()
         handle = (row.get('handle') or '').lower()
         summary = (row.get('summary') or '').lower()
         pts = 0
+
+        # Exact title match gets massive priority
+        name_clean = re.sub(r'[\s_\-]+', ' ', name).strip()
+        if name_clean == clean_q_lower:
+            pts += 40
+        elif clean_q_lower and clean_q_lower in name_clean:
+            pts += 25
+
+        # Curated creator handles
+        if handle in curated_handles or any(ch in handle for ch in curated_handles):
+            pts += 35
+
         for word in words:
             word_lat = _translit(word)
             for variant in [word, word_lat]:
                 if not variant:
                     continue
                 if variant in name:
-                    pts += 8
+                    pts += 10
                     break
                 elif variant in handle:
-                    pts += 7
+                    pts += 8
                     break
             else:
                 if any(variant in summary for variant in [word, word_lat]):
                     pts += 2
+
         # Bonus for AI and direct matched handles
         if row.get('_source') == 'ai_matched':
-            pts += 6
+            pts += 5
         elif row.get('_source') == 'direct_probe':
-            pts += 3
+            pts += 5
         return pts
 
     results = sorted(

@@ -72,8 +72,14 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
     for chunk, post_id in message_chunks:
         num_id = post_id.split('/')[-1] if '/' in post_id else post_id
         
-        # Remove reactions container so reaction emoji icons are never parsed as images or text
-        clean_chunk = re.sub(r'<div[^>]*class="[^"]*(?:tgme_widget_message_reactions|reactions|tgme_reaction)[^"]*"[\s\S]*?</div>', '', chunk, flags=re.IGNORECASE)
+        # Remove reactions container completely so reaction emoji icons are never parsed as images or text
+        clean_chunk = re.sub(
+            r'<div[^>]*class="[^"]*tgme_widget_message_reactions\b[\s\S]*?(?=<div[^>]*class="[^"]*tgme_widget_message_footer\b|<div[^>]*class="[^"]*tgme_widget_message_info\b|\Z)',
+            '',
+            chunk,
+            flags=re.IGNORECASE
+        )
+        clean_chunk = re.sub(r'<[^>]*class="[^"]*(?:tgme_reaction|reaction_emoji)[^"]*"[\s\S]*?</div>', '', clean_chunk, flags=re.IGNORECASE)
 
         text_m = re.search(r'<div[^>]*class="[^"]*tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)</div>', clean_chunk)
         text = ''
@@ -88,11 +94,10 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
         views_m = re.search(r'<span[^>]*class="[^"]*tgme_widget_message_views[^"]*"[^>]*>([\s\S]*?)</span>', clean_chunk)
         views = html.unescape(views_m.group(1)).strip() if views_m else ''
 
-        # Extract only real post media photos and video thumbnails (no reactions!)
-        photos = re.findall(r'class="[^"]*(?:tgme_widget_message_photo_wrap|tgme_widget_message_video_thumb|media_photo)[^"]*"[^>]*style="[^"]*background-image:url\(\'([^\']+)\'\)', clean_chunk)
-        if not photos:
-            all_bg = re.findall(r"background-image:url\('([^']+)'\)", clean_chunk)
-            photos = [u for u in all_bg if not re.search(r'reaction|emoji|thumb_reaction', u, re.IGNORECASE)]
+        # Extract only real post media photos (NEVER match reaction icons)
+        photos = re.findall(r'class="[^"]*(?:tgme_widget_message_photo_wrap|media_photo)[^"]*"[^>]*style="[^"]*background-image:url\(\'([^\']+)\'\)', clean_chunk)
+        # Filter out anything with reaction or emoji in url
+        photos = [u for u in photos if not re.search(r'reaction|emoji|thumb_reaction', u, re.IGNORECASE)]
 
         videos = re.findall(r'<video[^>]*src="([^"]+)"', clean_chunk)
 
