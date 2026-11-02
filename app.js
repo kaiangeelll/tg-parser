@@ -73,6 +73,8 @@ function normalizeChannel(raw) {
   const id = cleanHandle.toLowerCase() || Math.random().toString(36).slice(2);
   
   const existing = catalog.get(id) || {};
+  const isDirectProbe = raw._source === 'direct_probe';
+
   const channel = {
     ...existing,
     ...raw,
@@ -81,10 +83,11 @@ function normalizeChannel(raw) {
     cleanHandle,
     name: raw.name || raw.title || cleanHandle || 'Канал',
     count: raw.memberCount ?? raw.count ?? existing.count ?? null,
-    description: raw.summary || raw.description || existing.description || 'Публичный Telegram-канал.',
-    category: Array.isArray(raw.categories) ? raw.categories.join(', ') : (raw.category || raw.type || 'Канал'),
+    description: raw.summary || raw.description || existing.description || (isDirectProbe ? 'Публичный Telegram-канал — нажми чтобы посмотреть посты.' : 'Публичный Telegram-канал.'),
+    category: Array.isArray(raw.categories) && raw.categories.length ? raw.categories.join(', ') : (raw.category || raw.type || (isDirectProbe ? 'Канал (прямой поиск)' : 'Канал')),
     url: raw.telegramUrl || raw.url || `https://t.me/${cleanHandle}`,
-    avatar: raw.avatar || raw.photo || null
+    avatar: raw.avatar || raw.photo || null,
+    isDirectProbe,
   };
   
   catalog.set(id, channel);
@@ -123,8 +126,8 @@ function renderCards() {
     resultsCount.textContent = 'поиск...';
     cardsList.innerHTML = `
       <div class="empty-box">
-        <div class="empty-icon">⏳</div>
-        <div>Ищем в каталоге публичных каналов...</div>
+        <div class="empty-icon">🔍</div>
+        <div>Ищем в каталоге и проверяем точные имена каналов...</div>
       </div>
     `;
     return;
@@ -136,7 +139,7 @@ function renderCards() {
     cardsList.innerHTML = `
       <div class="empty-box">
         <div class="empty-icon">🔍</div>
-        <div>Ничего не найдено по этому запросу.<br>Попробуй другое слово, например: «новости», «крипта», «python» или прямую ссылку <b>t.me/username</b></div>
+        <div>Ничего не найдено.<br>Попробуй по-другому: <b>«новости»</b>, <b>«@ник»</b>, <b>«t.me/username»</b> или напиши имя канала латиницей.</div>
       </div>
     `;
     return;
@@ -158,9 +161,7 @@ function renderCards() {
         <div class="channel-info">
           <div class="channel-name-row">
             <span class="channel-title">${esc(c.name)}</span>
-            <svg class="verified-icon" viewBox="0 0 24 24" fill="currentColor">
-              <path d="m12 2 2.4 2.8 3.7-.5 1 3.5 3.3 1.7-1 3.5 1.7 3.3-2.8 2.4.5 3.7-3.5 1-1.7 3.3-3.5-1-3.3 1.7-2.4-2.8-3.7.5-1-3.5-3.3-1.7 1-3.5-1.7-3.3 2.8-2.4-.5-3.7 3.5-1 1.7-3.3 3.5 1 3.3-1.7z"/>
-            </svg>
+            ${c.isDirectProbe ? '' : `<svg class="verified-icon" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 2.4 2.8 3.7-.5 1 3.5 3.3 1.7-1 3.5 1.7 3.3-2.8 2.4.5 3.7-3.5 1-1.7 3.3-3.5-1-3.3 1.7-2.4-2.8-3.7.5-1-3.5-3.3-1.7 1-3.5-1.7-3.3 2.8-2.4-.5-3.7 3.5-1 1.7-3.3 3.5 1 3.3-1.7z"/></svg>`}
           </div>
 
           <div class="channel-handle-row">
@@ -172,7 +173,7 @@ function renderCards() {
         </div>
 
         <div class="channel-stats">
-          <div class="channel-subs">${esc(formatSubs(c.count))}</div>
+          <div class="channel-subs">${c.count != null ? esc(formatSubs(c.count)) : '—'}</div>
           <div class="channel-subs-label">подписчиков</div>
         </div>
 

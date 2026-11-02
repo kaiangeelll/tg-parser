@@ -6,6 +6,7 @@ import re
 import urllib.error
 import tgfind
 import tgparser
+import tgsearch
 
 ROOT = Path(__file__).resolve().parent
 
@@ -108,7 +109,12 @@ class Handler(BaseHTTPRequestHandler):
                 if len(query) > 120:
                     return self.send_json(400, {'error': 'Сократи запрос до 120 символов'})
                     
-                data = tgfind.search_directory(query, item_type=item_type, category=category)
+                data = tgsearch.smart_search(
+                    query,
+                    item_type=item_type,
+                    category=category,
+                    tgfind_rpc=tgfind.rpc,
+                )
                 return self.send_json(200, data)
             except urllib.error.HTTPError as e:
                 return self.send_json(502, {'error': f'Каталог временно недоступен ({e.code})'})
