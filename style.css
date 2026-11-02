@@ -700,12 +700,295 @@ body {
   position: relative;
 }
 
+/* Big Fullscreen Channel Reader Modal */
+.modal-channel-view {
+  width: min(1340px, 98vw) !important;
+  height: 95vh !important;
+  max-height: 95vh !important;
+  display: flex;
+  flex-direction: column;
+}
+
 .modal-header {
-  padding: 20px 24px;
+  padding: 16px 22px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  z-index: 10;
+  gap: 16px;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.modal-search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.modal-search-box input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-main);
+  font-size: 13px;
+  width: 170px;
+}
+
+.modal-chat-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 30px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  scroll-behavior: smooth;
+  background: radial-gradient(circle at 50% 30%, rgba(36, 129, 204, 0.03), transparent 60%), var(--bg-primary);
+}
+
+/* Telegram Date Sticky Divider */
+.chat-date-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: sticky;
+  top: 6px;
+  z-index: 5;
+  margin: 16px 0 12px;
+  pointer-events: none;
+}
+
+.chat-date-divider span {
+  background: rgba(22, 27, 34, 0.88);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  color: var(--tg-cyan);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 14px;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="light"] .chat-date-divider span {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--accent);
+}
+
+/* Post Chat Bubble */
+.post-bubble {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  max-width: 920px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transition: all 0.25s ease;
+  position: relative;
+}
+
+.post-bubble:hover {
+  border-color: rgba(56, 139, 253, 0.4);
+}
+
+.post-bubble.highlighted {
+  animation: postHighlightAnim 2.2s ease forwards;
+}
+
+@keyframes postHighlightAnim {
+  0% {
+    border-color: #388bfd;
+    box-shadow: 0 0 28px rgba(56, 139, 253, 0.7);
+    transform: scale(1.01);
+  }
+  70% {
+    border-color: #388bfd;
+    box-shadow: 0 0 16px rgba(56, 139, 253, 0.35);
+  }
+  100% {
+    border-color: var(--border);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    transform: scale(1);
+  }
+}
+
+.post-bubble-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.post-id-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+  color: var(--tg-cyan);
+  background: rgba(41, 182, 246, 0.1);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(41, 182, 246, 0.2);
+}
+
+.post-bubble-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-dim);
+}
+
+.post-date-tag {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Post Images Gallery */
+.post-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.post-media-grid img {
+  width: 100%;
+  max-height: 380px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: transform 0.2s, filter 0.2s;
+}
+
+.post-media-grid img:hover {
+  transform: scale(1.015);
+  filter: brightness(1.05);
+}
+
+.post-bubble-text {
+  font-size: 14px;
+  line-height: 1.68;
+  color: var(--text-main);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 12px;
+}
+
+/* Interactive in-app Telegram links inside posts */
+.tg-inapp-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(41, 182, 246, 0.12);
+  color: var(--tg-cyan);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.18s;
+  vertical-align: middle;
+}
+
+.tg-inapp-jump:hover {
+  background: rgba(41, 182, 246, 0.25);
+  border-color: var(--tg-cyan);
+  transform: translateY(-1px);
+}
+
+.tg-inapp-channel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 139, 253, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(56, 139, 253, 0.3);
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.18s;
+  vertical-align: middle;
+}
+
+.tg-inapp-channel:hover {
+  background: rgba(56, 139, 253, 0.25);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+/* Post Bubble Footer Actions */
+.post-bubble-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.post-bubble-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-dim);
+}
+
+.btn-scroll-bottom {
+  position: absolute;
+  bottom: 24px;
+  right: 32px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-focus);
+  color: var(--tg-cyan);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 20;
+  transition: all 0.2s;
+  opacity: 0;
+  pointer-events: none;
+}
+.btn-scroll-bottom.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+.btn-scroll-bottom:hover {
+  background: var(--tg-cyan);
+  color: #fff;
 }
 
 .modal-channel-head {

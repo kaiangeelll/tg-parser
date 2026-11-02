@@ -162,57 +162,58 @@
     </main>
   </div>
 
-  <!-- Channel & Posts Parser Modal -->
+  <!-- Channel & Posts Parser Fullscreen Modal -->
   <div class="modal-overlay" id="channelModal">
-    <div class="modal-content">
+    <div class="modal-content modal-channel-view">
       <div class="modal-header">
         <div class="modal-channel-head" id="modalChannelHead">
-          <!-- Loaded dynamically -->
+          <!-- Loaded dynamically: Avatar, Title, Subs -->
         </div>
-        <button class="btn-close" id="closeChannelModal">&times;</button>
-      </div>
 
-      <div class="modal-body">
-        <!-- Channel description -->
-        <div class="modal-desc" id="modalChannelDesc"></div>
+        <div class="modal-header-actions">
+          <!-- Search within posts -->
+          <div class="modal-search-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" id="modalSearchPosts" placeholder="Поиск в сообщениях..." autocomplete="off">
+          </div>
 
-        <!-- Action buttons -->
-        <div class="modal-quick-actions" id="modalQuickActions">
-          <button class="btn-pill" id="modalCopyHandle">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            Копировать ник
+          <!-- Order switcher -->
+          <button class="btn-pill" id="modalOrderToggle" title="Переключить порядок">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></svg>
+            <span id="orderToggleText">⬆ Снизу вверх (как в TG)</span>
           </button>
-          <button class="btn-pill" id="modalCopyLink">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            Копировать t.me
-          </button>
-          <button class="btn-pill" id="modalCopyAllPosts">
+
+          <!-- Quick actions -->
+          <button class="btn-pill" id="modalCopyAllPosts" title="Скопировать текст всех постов">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            Скопировать все посты
+            Копировать все
           </button>
-          <button class="btn-pill" id="modalDownloadJson">
+          <button class="btn-pill" id="modalDownloadJson" title="Выгрузить JSON">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Экспорт в JSON
+            JSON
           </button>
           <a class="btn-pill primary" id="modalOpenTelegram" target="_blank" rel="noopener">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            В Telegram
+            В TG ↗
           </a>
-        </div>
 
-        <!-- Posts section -->
-        <div class="posts-section-header">
-          <div class="posts-section-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-            Лента сообщений (парсер)
-          </div>
-          <span id="postsStatus" class="results-count">загрузка постов...</span>
-        </div>
-
-        <div class="posts-container" id="postsContainer">
-          <!-- Posts rendered here -->
+          <button class="btn-close" id="closeChannelModal" title="Закрыть">&times;</button>
         </div>
       </div>
+
+      <!-- Channel Description Banner -->
+      <div id="modalChannelDesc" style="padding: 10px 22px; font-size: 12.5px; color: var(--text-muted); background: var(--bg-secondary); border-bottom: 1px solid var(--border); display: none;"></div>
+
+      <!-- Telegram-like Chat Message Feed -->
+      <div class="modal-chat-body" id="postsContainer">
+        <!-- Posts and Date Dividers rendered here -->
+      </div>
+
+      <!-- Floating Jump to Bottom Button -->
+      <button class="btn-scroll-bottom" id="btnScrollBottom">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        Вниз к новым
+      </button>
     </div>
   </div>
 

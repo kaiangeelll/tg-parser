@@ -12,8 +12,10 @@ let currentQuery = '';
 let isSearching = false;
 let currentChannelData = null;
 let currentPostsData = [];
+let isAscendingOrder = true; // true = TG style (top: older, bottom: newer)
+let filterPostText = '';
 
-// Fallback initial recommendations so page has content immediately
+// Fallback initial recommendations
 const INITIAL_PROMPTS = ['новости', 'технологии', 'дизайн', 'разработка', 'нейросети', 'крипта'];
 
 // Toast notification
@@ -34,7 +36,6 @@ async function copyToClipboard(text, successMsg = 'Скопировано в б�
     await navigator.clipboard.writeText(text);
     notify(successMsg);
   } catch (err) {
-    // Fallback
     const input = document.createElement('textarea');
     input.value = text;
     document.body.appendChild(input);
@@ -66,6 +67,41 @@ function esc(str = '') {
   }[c]));
 }
 
+// Format message text with in-app Telegram links interception
+function formatPostHtml(rawText, currentHandle) {
+  if (!rawText) return '<span style="color: var(--text-dim); font-style: italic;">[Медиа / запись без текста]</span>';
+  
+  const curH = (currentHandle || '').toLowerCase().replace(/^@/, '');
+  let safe = esc(rawText);
+
+  // 1. In-app links to specific posts: https://t.me/channel/123
+  safe = safe.replace(/https?:\/\/t\.me\/([A-Za-z0-9_]+)\/(\d+)/gi, (match, ch, pid) => {
+    if (ch.toLowerCase() === curH) {
+      return `<a href="#post-bubble-${pid}" class="tg-inapp-jump" data-jump-post="${pid}">💬 Сообщение #${pid}</a>`;
+    } else {
+      return `<a href="#" class="tg-inapp-channel" data-open-channel="${ch}" data-open-post="${pid}">↗ @${ch} #${pid}</a>`;
+    }
+  });
+
+  // 2. In-app links to channels: https://t.me/channel
+  safe = safe.replace(/https?:\/\/t\.me\/([A-Za-z0-9_]{3,32})(?![/\w])/gi, (match, ch) => {
+    if (ch.toLowerCase() === 's') return match;
+    return `<a href="#" class="tg-inapp-channel" data-open-channel="${ch}">↗ @${ch}</a>`;
+  });
+
+  // 3. User mentions: @channel
+  safe = safe.replace(/(^|[^A-Za-z0-9_])@([A-Za-z0-9_]{4,32})/gi, (match, prefix, ch) => {
+    return `${prefix}<a href="#" class="tg-inapp-channel" data-open-channel="${ch}">@${ch}</a>`;
+  });
+
+  // 4. Regular external web links
+  safe = safe.replace(/(https?:\/\/(?!t\.me\/)[^\s<>"']+)/gi, (match) => {
+    return `<a href="${match}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline;">${match}</a>`;
+  });
+
+  return safe;
+}
+
 // Normalize channel record
 function normalizeChannel(raw) {
   const handleRaw = raw.handle || raw.slug || '';
@@ -83,7 +119,7 @@ function normalizeChannel(raw) {
     cleanHandle,
     name: raw.name || raw.title || cleanHandle || 'Канал',
     count: raw.memberCount ?? raw.count ?? existing.count ?? null,
-    description: raw.summary || raw.description || existing.description || (isDirectProbe ? 'Публичный Telegram-канал — нажми чтобы посмотреть посты.' : 'Публичный Telegram-канал.'),
+    description: raw.summary || raw.description || existing.description || (isDirectProbe ? 'Публичный Telegram-канал — нажми чтобы открыть ленту.' : 'Публичный Telegram-канал.'),
     category: Array.isArray(raw.categories) && raw.categories.length ? raw.categories.join(', ') : (raw.category || raw.type || (isDirectProbe ? 'Канал (прямой поиск)' : 'Канал')),
     url: raw.telegramUrl || raw.url || `https://t.me/${cleanHandle}`,
     avatar: raw.avatar || raw.photo || null,
@@ -116,7 +152,7 @@ function toggleSave(id) {
   renderCards();
 }
 
-// Render cards
+// Render cards list
 function renderCards() {
   const list = currentResults;
   const cardsList = $('#cardsList');
@@ -227,7 +263,6 @@ async function performSearch(queryText = '') {
     return;
   }
 
-  // Check if input is a direct link or @handle
   const isDirect = input.startsWith('@') || /^https?:\/\//i.test(input) || /^t\.me\//i.test(input);
   if (isDirect) {
     await fetchSingleChannel(input);
@@ -296,7 +331,6 @@ async function fetchSingleChannel(value) {
     currentResults = [channel];
     openChannelModal(channel.id);
   } catch (err) {
-    // If not in catalog, still allow direct opening in reader
     const fallbackChannel = normalizeChannel({ handle, name: handle });
     currentResults = [fallbackChannel];
     openChannelModal(fallbackChannel.id);
@@ -307,61 +341,77 @@ async function fetchSingleChannel(value) {
   }
 }
 
-// Load posts for channel & open modal
+// Open Channel Modal
 async function openChannelModal(id) {
   const channel = catalog.get(id) || savedChannels.find(c => c.id === id);
   if (!channel) return;
 
   currentChannelData = channel;
   currentPostsData = [];
+  filterPostText = '';
+  $('#modalSearchPosts').value = '';
 
   const initial = (channel.name || channel.cleanHandle || '?')[0].toUpperCase();
   const avatarHtml = channel.avatar 
-    ? `<img src="${esc(channel.avatar)}" alt="">` 
+    ? `<img src="${esc(channel.avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;">` 
     : initial;
 
   $('#modalChannelHead').innerHTML = `
-    <div class="modal-avatar">${avatarHtml}</div>
-    <div>
-      <div class="modal-title">${esc(channel.name)}</div>
-      <div class="modal-handle">${esc(channel.handle)} · ${esc(formatSubs(channel.count))} подписчиков</div>
+    <div class="modal-avatar" style="width:48px;height:48px;border-radius:14px;overflow:hidden;flex-shrink:0;">${avatarHtml}</div>
+    <div style="min-width:0;">
+      <div class="modal-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px;">${esc(channel.name)}</div>
+      <div class="modal-handle">${esc(channel.handle)} ${channel.count != null ? '· ' + formatSubs(channel.count) + ' подписчиков' : ''}</div>
     </div>
   `;
 
-  $('#modalChannelDesc').textContent = channel.description || 'Описание отсутствует.';
+  if (channel.description) {
+    $('#modalChannelDesc').textContent = channel.description;
+    $('#modalChannelDesc').style.display = 'block';
+  } else {
+    $('#modalChannelDesc').style.display = 'none';
+  }
+
   $('#modalOpenTelegram').href = channel.url || `https://t.me/${channel.cleanHandle}`;
-  $('#postsStatus').textContent = 'загружаю посты (парсер)...';
   $('#postsContainer').innerHTML = `
-    <div class="empty-box" style="padding: 24px 0;">
+    <div class="empty-box" style="padding: 40px 0;">
       <div class="empty-icon">⏳</div>
-      <div>Парсим свежие сообщения канала...</div>
+      <div>Загружаем ленту сообщений канала...</div>
     </div>
   `;
 
   $('#channelModal').classList.add('open');
 
-  // Fetch posts from /api/posts
   try {
     const res = await fetch(`/api/posts?handle=${encodeURIComponent(channel.cleanHandle)}`);
     const data = await res.json();
     
+    if (data.channel && data.channel.avatar && !channel.avatar) {
+      channel.avatar = data.channel.avatar;
+      $('#modalChannelHead').querySelector('.modal-avatar').innerHTML = `<img src="${esc(channel.avatar)}" alt="" style="width:100%;height:100%;object-fit:cover;">`;
+    }
+
     if (data.posts && data.posts.length) {
       currentPostsData = data.posts;
-      $('#postsStatus').textContent = `${data.posts.length} постов загружено`;
-      renderPosts(data.posts, channel);
+      renderPosts();
+      
+      // Auto-scroll to the bottom in Telegram mode (newest messages)
+      if (isAscendingOrder) {
+        setTimeout(() => {
+          const container = $('#postsContainer');
+          container.scrollTop = container.scrollHeight;
+        }, 120);
+      }
     } else {
-      $('#postsStatus').textContent = 'сообщений не найдено';
       $('#postsContainer').innerHTML = `
-        <div class="empty-box" style="padding: 24px 0;">
+        <div class="empty-box" style="padding: 40px 0;">
           <div class="empty-icon">📭</div>
-          <div>Лента канала пуста или является приватной.</div>
+          <div>Лента сообщений канала пуста или является приватной.</div>
         </div>
       `;
     }
   } catch (err) {
-    $('#postsStatus').textContent = 'не удалось получить посты';
     $('#postsContainer').innerHTML = `
-      <div class="empty-box" style="padding: 24px 0;">
+      <div class="empty-box" style="padding: 40px 0;">
         <div class="empty-icon">⚠️</div>
         <div>Не удалось загрузить сообщения: ${esc(err.message)}</div>
       </div>
@@ -369,43 +419,92 @@ async function openChannelModal(id) {
   }
 }
 
-// Render posts in modal
-function renderPosts(posts, channel) {
+// Render posts in chat view
+function renderPosts() {
   const container = $('#postsContainer');
-  container.innerHTML = posts.map(p => {
-    return `
-      <div class="post-card">
-        <div class="post-meta">
-          <div class="post-meta-left">
-            <span>#${esc(p.id)}</span>
-            <span>${esc(p.date || 'Недавно')}</span>
+  let list = [...currentPostsData];
+
+  // Filter text
+  if (filterPostText) {
+    const f = filterPostText.toLowerCase();
+    list = list.filter(p => (p.text || '').toLowerCase().includes(f) || String(p.id).includes(f));
+  }
+
+  // Sort: ascending (TG style: oldest top, newest bottom) or descending
+  list.sort((a, b) => {
+    const numA = parseInt(a.id, 10) || 0;
+    const numB = parseInt(b.id, 10) || 0;
+    return isAscendingOrder ? (numA - numB) : (numB - numA);
+  });
+
+  if (!list.length) {
+    container.innerHTML = `
+      <div class="empty-box" style="padding: 40px 0;">
+        <div class="empty-icon">🔍</div>
+        <div>По запросу «${esc(filterPostText)}» в ленте ничего не найдено.</div>
+      </div>
+    `;
+    return;
+  }
+
+  let htmlOutput = '';
+  let lastDatePill = '';
+
+  list.forEach(p => {
+    // Date divider pill when date changes
+    const dateLabel = p.dateOnly || (p.date ? p.date.split(',')[0].trim() : '');
+    if (dateLabel && dateLabel !== lastDatePill) {
+      lastDatePill = dateLabel;
+      htmlOutput += `<div class="chat-date-divider"><span>${esc(dateLabel)}</span></div>`;
+    }
+
+    const formattedBody = formatPostHtml(p.text, currentChannelData ? currentChannelData.cleanHandle : '');
+    
+    // Images media grid
+    let mediaHtml = '';
+    if (p.images && p.images.length) {
+      mediaHtml = `
+        <div class="post-media-grid">
+          ${p.images.map(img => `<img src="${esc(img)}" alt="" loading="lazy" onclick="window.open('${esc(img)}', '_blank')">`).join('')}
+        </div>
+      `;
+    }
+
+    htmlOutput += `
+      <div class="post-bubble" id="post-bubble-${esc(p.id)}">
+        <div class="post-bubble-header">
+          <span class="post-id-badge">#${esc(p.id)}</span>
+          <div class="post-bubble-meta">
+            <span class="post-date-tag">${esc(p.date || 'Недавно')}</span>
+            ${p.views ? `<span>👁 ${esc(p.views)}</span>` : ''}
           </div>
-          ${p.views ? `
-            <div class="post-views">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              <span>${esc(p.views)}</span>
-            </div>
-          ` : ''}
         </div>
 
-        <div class="post-text">${esc(p.text || '[Медиа/Фото без текста]')}</div>
+        ${mediaHtml}
 
-        <div class="post-actions">
-          <button class="btn-post-copy" data-copy-post="${esc(p.text || '')}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            Скопировать текст
-          </button>
-          <a class="btn-post-copy" href="${esc(p.url || channel.url)}" target="_blank" rel="noopener">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Пост в TG
-          </a>
+        <div class="post-bubble-text">${formattedBody}</div>
+
+        <div class="post-bubble-footer">
+          <div class="post-bubble-footer-left">
+            <a href="${esc(p.url || '#')}" target="_blank" rel="noopener" style="color: var(--tg-cyan); text-decoration: none; font-weight: 600;">
+              В Telegram ↗
+            </a>
+          </div>
+          <div>
+            <button class="btn-post-copy" data-copy-post="${esc(p.text || '')}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Копировать
+            </button>
+          </div>
         </div>
       </div>
     `;
-  }).join('');
+  });
+
+  container.innerHTML = htmlOutput;
 }
 
-// Download JSON export
+// Export JSON
 function exportChannelJson() {
   if (!currentChannelData) return;
   const payload = {
@@ -417,7 +516,7 @@ function exportChannelJson() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${currentChannelData.cleanHandle}_parsed.json`;
+  a.download = `${currentChannelData.cleanHandle}_feed.json`;
   a.click();
   URL.revokeObjectURL(url);
   notify('JSON файл скачан!');
@@ -429,22 +528,34 @@ function copyAllPosts() {
     notify('Нет постов для копирования');
     return;
   }
-  const text = currentPostsData.map((p, idx) => {
-    return `[Пост #${p.id} | ${p.date || ''} | ${p.views ? p.views + ' просм.' : ''}]\n${p.text || ''}\n`;
+  const text = currentPostsData.map(p => {
+    return `[#${p.id} | ${p.date || ''} | ${p.views ? p.views + ' просм.' : ''}]\n${p.text || ''}\n`;
   }).join('\n----------------------------------------\n\n');
 
   copyToClipboard(text, `Все ${currentPostsData.length} постов скопированы!`);
 }
 
+// Jump to internal post inside chat
+function jumpToPost(postId) {
+  const target = document.getElementById(`post-bubble-${postId}`);
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.remove('highlighted');
+    void target.offsetWidth; // trigger reflow
+    target.classList.add('highlighted');
+    notify(`Переход к сообщению #${postId}`);
+  } else {
+    notify(`Сообщение #${postId} находится за пределами текущей выборки.`);
+  }
+}
+
 // Event Listeners Setup
 function initEvents() {
-  // Search submit
   $('#searchBtn').onclick = () => performSearch();
   $('#searchInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') performSearch();
   });
 
-  // Type switchers
   $('#typeSwitch').onclick = e => {
     const btn = e.target.closest('.type-btn');
     if (!btn) return;
@@ -453,21 +564,17 @@ function initEvents() {
     performSearch();
   };
 
-  // Category tags
   $('#categoryTags').onclick = e => {
     const btn = e.target.closest('.tag-btn');
     if (!btn) return;
     $$('#categoryTags .tag-btn').forEach(b => b.classList.toggle('active', b === btn));
     activeCat = btn.dataset.cat;
-    
-    // Auto-search tag
     if (activeCat !== 'all') {
       $('#searchInput').value = btn.textContent.trim();
     }
     performSearch();
   };
 
-  // Cards list click (delegation)
   $('#cardsList').onclick = e => {
     const actionBtn = e.target.closest('[data-action]');
     if (actionBtn) {
@@ -487,7 +594,6 @@ function initEvents() {
     }
   };
 
-  // Saved list click
   $('#savedList').onclick = e => {
     const item = e.target.closest('[data-channel-id]');
     if (item) {
@@ -495,7 +601,6 @@ function initEvents() {
     }
   };
 
-  // Clear saved
   $('#clearSavedBtn').onclick = () => {
     if (!savedChannels.length) return;
     savedChannels = [];
@@ -505,29 +610,76 @@ function initEvents() {
     notify('Подборка очищена');
   };
 
-  // Modal actions
+  // Close modal
   $('#closeChannelModal').onclick = () => $('#channelModal').classList.remove('open');
   $('#channelModal').onclick = e => {
     if (e.target === $('#channelModal')) $('#channelModal').classList.remove('open');
   };
 
-  $('#modalCopyHandle').onclick = () => {
-    if (currentChannelData) copyToClipboard(currentChannelData.handle, 'Ник канала скопирован!');
+  // Order switch
+  $('#modalOrderToggle').onclick = () => {
+    isAscendingOrder = !isAscendingOrder;
+    $('#orderToggleText').textContent = isAscendingOrder ? '⬆ Снизу вверх (как в TG)' : '⬇ Сверху вниз (новые первыми)';
+    renderPosts();
+    if (isAscendingOrder) {
+      setTimeout(() => {
+        const c = $('#postsContainer');
+        c.scrollTop = c.scrollHeight;
+      }, 50);
+    }
   };
-  $('#modalCopyLink').onclick = () => {
-    if (currentChannelData) copyToClipboard(currentChannelData.url, 'Ссылка на канал скопирована!');
-  };
+
+  // Search within posts
+  $('#modalSearchPosts').addEventListener('input', e => {
+    filterPostText = e.target.value.trim();
+    renderPosts();
+  });
+
+  // Action buttons
   $('#modalCopyAllPosts').onclick = copyAllPosts;
   $('#modalDownloadJson').onclick = exportChannelJson;
 
-  // Copy post text click inside modal
-  $('#postsContainer').onclick = e => {
+  // Jump to bottom button
+  const postsBox = $('#postsContainer');
+  postsBox.addEventListener('scroll', () => {
+    const diff = postsBox.scrollHeight - postsBox.scrollTop - postsBox.clientHeight;
+    $('#btnScrollBottom').classList.toggle('show', diff > 280);
+  });
+
+  $('#btnScrollBottom').onclick = () => {
+    postsBox.scrollTo({ top: postsBox.scrollHeight, behavior: 'smooth' });
+  };
+
+  // Intercept clicks inside chat (jumping to post or opening another channel)
+  postsBox.onclick = e => {
+    // Copy post text
     const copyBtn = e.target.closest('[data-copy-post]');
     if (copyBtn) {
-      const text = copyBtn.dataset.copyPost;
-      copyToClipboard(text, 'Текст поста скопирован!');
+      e.preventDefault();
+      copyToClipboard(copyBtn.dataset.copyPost, 'Текст сообщения скопирован!');
       copyBtn.classList.add('copied');
       setTimeout(() => copyBtn.classList.remove('copied'), 1500);
+      return;
+    }
+
+    // In-app jump to another post in same channel
+    const jumpBtn = e.target.closest('.tg-inapp-jump');
+    if (jumpBtn) {
+      e.preventDefault();
+      const pid = jumpBtn.dataset.jumpPost;
+      jumpToPost(pid);
+      return;
+    }
+
+    // In-app open another channel
+    const chBtn = e.target.closest('.tg-inapp-channel');
+    if (chBtn) {
+      e.preventDefault();
+      const targetCh = chBtn.dataset.openChannel;
+      if (targetCh) {
+        fetchSingleChannel(targetCh);
+      }
+      return;
     }
   };
 
@@ -541,14 +693,10 @@ function initEvents() {
     if (e.target === $('#apiModal')) closeApi();
   };
 
-  // Copy code blocks
   $$('.copy-code-btn').forEach(btn => {
     btn.onclick = () => {
-      const targetId = btn.dataset.target;
-      const el = document.getElementById(targetId);
-      if (el) {
-        copyToClipboard(el.textContent, 'Код скопирован!');
-      }
+      const el = document.getElementById(btn.dataset.target);
+      if (el) copyToClipboard(el.textContent, 'Код скопирован!');
     };
   });
 
@@ -569,7 +717,6 @@ async function init() {
   initEvents();
   renderSaved();
   
-  // Pick random trending topic for initial display
   const initialTopic = INITIAL_PROMPTS[Math.floor(Math.random() * INITIAL_PROMPTS.length)];
   $('#searchInput').value = initialTopic;
   await performSearch(initialTopic);
