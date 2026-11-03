@@ -954,6 +954,97 @@ function updateChannelAvatarInDom(cleanHandle, avatarUrl) {
   }
 }
 
+// Telegram Sidebar in Channel View
+let sidebarFilterText = '';
+
+function renderModalSidebar() {
+  const foldersBar = $('#modalSidebarFoldersBar');
+  const channelList = $('#modalSidebarChannelList');
+  if (!foldersBar || !channelList) return;
+
+  // 1. Folders tabs in sidebar
+  foldersBar.innerHTML = folders.map(f => {
+    let count = 0;
+    if (f.id === 'all') {
+      count = savedChannels.length;
+    } else {
+      count = savedChannels.filter(c => (c.folderIds || []).includes(f.id)).length;
+    }
+    const isActive = f.id === activeFolderId;
+    return `
+      <div class="tg-sidebar-folder-pill ${isActive ? 'active' : ''}" data-sidebar-folder="${esc(f.id)}">
+        <span>${esc(f.icon || '📁')}</span>
+        <span>${esc(f.name)}</span>
+        <span style="font-size:10.5px; opacity:0.8;">(${count})</span>
+      </div>
+    `;
+  }).join('');
+
+  $$('#modalSidebarFoldersBar .tg-sidebar-folder-pill').forEach(pill => {
+    pill.onclick = (e) => {
+      e.stopPropagation();
+      activeFolderId = pill.dataset.sidebarFolder;
+      renderModalSidebar();
+      renderFolderTabs();
+    };
+  });
+
+  // 2. Channels in active folder
+  let channelsInFolder = activeFolderId === 'all'
+    ? [...savedChannels]
+    : savedChannels.filter(c => (c.folderIds || []).includes(activeFolderId));
+
+  if (sidebarFilterText) {
+    const f = sidebarFilterText.toLowerCase();
+    channelsInFolder = channelsInFolder.filter(c => 
+      (c.name || '').toLowerCase().includes(f) || 
+      (c.handle || '').toLowerCase().includes(f) ||
+      (c.description || '').toLowerCase().includes(f)
+    );
+  }
+
+  const currentId = currentChannelData ? currentChannelData.id : '';
+
+  if (!channelsInFolder.length) {
+    channelList.innerHTML = `
+      <div style="padding: 30px 16px; text-align: center; color: var(--text-dim); font-size: 13px;">
+        Каналов не найдено
+      </div>
+    `;
+    return;
+  }
+
+  channelList.innerHTML = channelsInFolder.map(c => {
+    const initial = (c.name || c.cleanHandle || '?')[0].toUpperCase();
+    const avatarHtml = c.avatar
+      ? `<img src="${esc(c.avatar)}" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">`
+      : initial;
+    const isActive = c.id === currentId;
+
+    return `
+      <div class="tg-sidebar-item ${isActive ? 'active' : ''}" data-ch-id="${esc(c.id)}">
+        <div class="tg-sidebar-item-avatar">
+          ${avatarHtml}
+        </div>
+        <div class="tg-sidebar-item-info">
+          <div class="tg-sidebar-item-name">${esc(c.name)}</div>
+          <div class="tg-sidebar-item-meta">${esc(c.handle)} ${c.count != null ? '• ' + formatSubs(c.count) : ''}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  $$('#modalSidebarChannelList .tg-sidebar-item').forEach(item => {
+    item.onclick = (e) => {
+      e.stopPropagation();
+      const chId = item.dataset.chId;
+      if (chId && chId !== currentId) {
+        openChannelModal(chId);
+      }
+    };
+  });
+}
+
 // Open Channel Modal
 async function openChannelModal(id) {
   const channel = catalog.get(id) || savedChannels.find(c => c.id === id);
@@ -963,6 +1054,8 @@ async function openChannelModal(id) {
   currentPostsData = [];
   filterPostText = '';
   $('#modalSearchPosts').value = '';
+
+  renderModalSidebar();
 
   const initial = (channel.name || channel.cleanHandle || '?')[0].toUpperCase();
   const avatarHtml = channel.avatar 
@@ -1003,11 +1096,13 @@ async function openChannelModal(id) {
       if (data.channel.avatar) {
         channel.avatar = data.channel.avatar;
         updateChannelAvatarInDom(channel.cleanHandle, data.channel.avatar);
+        renderModalSidebar();
       }
       if (data.channel.name && (!channel.name || channel.name === channel.cleanHandle)) {
         channel.name = data.channel.name;
         const titleEl = $('#modalChannelHead')?.querySelector('.modal-title');
         if (titleEl) titleEl.textContent = channel.name;
+        renderModalSidebar();
       }
     }
 
@@ -1214,13 +1309,13 @@ function renderPosts() {
     }
 
     let noteBadge = '';
-    if (p.isMediaNote && p.text) {
+    if (p.isMediaNote && !p.text) {
       noteBadge = `
         <div class="media-note-banner">
           <span class="media-note-icon">📹</span>
           <div class="media-note-info">
-            <strong>Видеосообщение (кружочек) / Заметка</strong>
-            <small>Смотрите полную видеозапись в Telegram ↗</small>
+            <strong>Видеосообщение (кружочек) / Голосовое</strong>
+            <small>Смотрите запись в Telegram ↗</small>
           </div>
         </div>
       `;
@@ -1512,6 +1607,32 @@ function initEvents() {
         openAssignFolderModal(channelForFolderAssignment.id);
         notify(`Папка «${nf.name}» создана!`);
       }
+    };
+  }
+
+  // Sidebar Search within Folders in Channel Modal
+  const sidebarFilterInput = $('#modalSidebarFilterInput');
+  if (sidebarFilterInput) {
+    sidebarFilterInput.oninput = e => {
+      sidebarFilterText = e.target.value.trim();
+      renderModalSidebar();
+    };
+  }
+
+  // Sidebar Toggle Button (Desktop & Mobile)
+  const toggleBtn = $('#btnToggleSidebar');
+  const tgSidebar = $('#modalTgSidebar');
+  if (toggleBtn && tgSidebar) {
+    toggleBtn.onclick = () => {
+      tgSidebar.classList.toggle('collapsed');
+    };
+  }
+
+  // Mobile Close Sidebar Button
+  const closeSidebarMobile = $('#btnCloseSidebarMobile');
+  if (closeSidebarMobile && tgSidebar) {
+    closeSidebarMobile.onclick = () => {
+      tgSidebar.classList.add('collapsed');
     };
   }
 

@@ -157,21 +157,31 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
         clean_chunk = re.sub(r'<div[^>]*class="[^"]*(?:reactions|reaction)[^"]*"[\s\S]*?</div>', '', clean_chunk, flags=re.IGNORECASE)
         clean_chunk = re.sub(r'<span[^>]*class="[^"]*tgme_reaction[^"]*"[\s\S]*?</span>', '', clean_chunk, flags=re.IGNORECASE)
 
-        # Detect round video notes (кружочки) / voice messages / unsupported media
-        is_media_note = ('message_media_not_supported' in clean_chunk or 'text_not_supported_wrap' in clean_chunk)
+        # Detect true round video notes (кружочки) / voice messages only (never false-flag normal posts)
+        is_round_video = bool(re.search(r'tgme_widget_message_roundvideo|roundvideo', clean_chunk, re.IGNORECASE))
+        is_voice = bool(re.search(r'tgme_widget_message_voice|voice_message', clean_chunk, re.IGNORECASE))
+        is_media_note = (is_round_video or is_voice)
+
+        # Remove unsupported media placeholders so they never leak into post text
+        clean_chunk = re.sub(r'<div[^>]*class="[^"]*message_media_not_supported[^"]*"[\s\S]*?</div>', '', clean_chunk, flags=re.IGNORECASE)
+        clean_chunk = re.sub(r'<div[^>]*class="[^"]*media_not_supported[^"]*"[\s\S]*?</div>', '', clean_chunk, flags=re.IGNORECASE)
 
         # Target ONLY real message body: class="... js-message_text ..." (NEVER reply text)
-        text_m = re.search(r'<div[^>]*class="[^"]*\bjs-message_text\b[^"]*"[^>]*>([\s\S]*?)</div>', clean_chunk)
+        text_m = re.search(r'<div[^>]*class="[^"]*\bjs-message_text\b[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*tgme_widget_message_footer|\Z)', clean_chunk)
         if not text_m:
-            for tm in re.finditer(r'<div[^>]*class="[^"]*tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)</div>', clean_chunk):
+            for tm in re.finditer(r'<div[^>]*class="[^"]*tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*tgme_widget_message_footer|\Z)', clean_chunk):
                 if 'js-message_reply_text' not in tm.group(0):
                     text_m = tm
                     break
 
         text = ''
         if text_m:
-            text = html.unescape(re.sub(r'<br\s*/?>', '\n', text_m.group(1)))
+            raw_text = text_m.group(1)
+            raw_text = re.sub(r'</div>\s*</div>\s*$', '', raw_text)
+            text = html.unescape(re.sub(r'<br\s*/?>', '\n', raw_text))
+            text = re.sub(r'<tg-emoji[^>]*>(?:<i[^>]*>[\s\S]*?</i>)?(.*?)</tg-emoji>', r'\1', text)
             text = re.sub(r'<[^>]+>', '', text).strip()
+            text = re.sub(r'(?i)(?:Please open Telegram to view this post|This media is not supported[^\n]*|Media is too big)', '', text).strip()
 
         time_m = re.search(r'<time[^>]*datetime="([^"]+)"[^>]*>([\s\S]*?)</time>', clean_chunk)
         date_iso = time_m.group(1) if time_m else ''
