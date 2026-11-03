@@ -68,8 +68,21 @@ function esc(str = '') {
 }
 
 // Format message text with in-app Telegram links interception
-function formatPostHtml(rawText, currentHandle) {
-  if (!rawText) return '<span style="color: var(--text-dim); font-style: italic;">[Медиа / запись без текста]</span>';
+function formatPostHtml(rawText, currentHandle, isMediaNote = false) {
+  if (!rawText) {
+    if (isMediaNote) {
+      return `
+        <div class="media-note-banner">
+          <span class="media-note-icon">📹</span>
+          <div class="media-note-info">
+            <strong>Видеосообщение (кружочек) / Голосовое</strong>
+            <small>Telegram скрывает кружочки и голосовые заметки в веб-виджетах</small>
+          </div>
+        </div>
+      `;
+    }
+    return '<span style="color: var(--text-dim); font-style: italic;">[Медиа / запись без текста]</span>';
+  }
   
   const curH = (currentHandle || '').toLowerCase().replace(/^@/, '');
   let safe = esc(rawText);
@@ -417,6 +430,7 @@ async function openChannelModal(id) {
   `;
 
   $('#channelModal').classList.add('open');
+  document.body.classList.add('modal-open');
 
   try {
     const res = await fetch(`/api/posts?handle=${encodeURIComponent(channel.cleanHandle)}&all=1`);
@@ -618,16 +632,33 @@ function renderPosts() {
       htmlOutput += `<div class="chat-date-divider"><span>${esc(dateLabel)}</span></div>`;
     }
 
-    const formattedBody = formatPostHtml(p.text, currentChannelData ? currentChannelData.cleanHandle : '');
+    const formattedBody = formatPostHtml(p.text, currentChannelData ? currentChannelData.cleanHandle : '', p.isMediaNote);
     
-    // Filter out reaction images and small emoji stickers
-    const validImages = (p.images || []).filter(img => !/reaction|emoji|thumb_reaction/i.test(img));
+    // Filter out reaction images and small emoji stickers (never show as big post photos)
+    const validImages = (p.images || []).filter(img => {
+      if (!img) return false;
+      const lower = img.toLowerCase();
+      return !lower.includes('reaction') && !lower.includes('emoji') && !lower.includes('thumb_reaction');
+    });
     
     let mediaHtml = '';
     if (validImages.length) {
       mediaHtml = `
         <div class="post-media-grid">
           ${validImages.map(img => `<img src="${esc(img)}" alt="" loading="lazy" onclick="window.open('${esc(img)}', '_blank')">`).join('')}
+        </div>
+      `;
+    }
+
+    let noteBadge = '';
+    if (p.isMediaNote && p.text) {
+      noteBadge = `
+        <div class="media-note-banner">
+          <span class="media-note-icon">📹</span>
+          <div class="media-note-info">
+            <strong>Видеосообщение (кружочек) / Заметка</strong>
+            <small>Смотрите полную видеозапись в Telegram ↗</small>
+          </div>
         </div>
       `;
     }
@@ -649,6 +680,7 @@ function renderPosts() {
         </div>
 
         ${mediaHtml}
+        ${noteBadge}
 
         <div class="post-bubble-text">${formattedBody}</div>
 
@@ -750,6 +782,12 @@ async function jumpToPost(postId) {
   notify(`Сообщение #${postId} не найдено или удалено.`);
 }
 
+// Close modal helper (locks/unlocks body scroll)
+function closeModal() {
+  $('#channelModal').classList.remove('open');
+  document.body.classList.remove('modal-open');
+}
+
 // Event Listeners Setup
 function initEvents() {
   $('#searchBtn').onclick = () => performSearch();
@@ -812,10 +850,15 @@ function initEvents() {
   };
 
   // Close modal
-  $('#closeChannelModal').onclick = () => $('#channelModal').classList.remove('open');
+  $('#closeChannelModal').onclick = closeModal;
   $('#channelModal').onclick = e => {
-    if (e.target === $('#channelModal')) $('#channelModal').classList.remove('open');
+    if (e.target === $('#channelModal')) closeModal();
   };
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('#channelModal').classList.contains('open')) {
+      closeModal();
+    }
+  });
 
   // Refresh posts button
   const refreshBtn = $('#modalRefreshPosts');

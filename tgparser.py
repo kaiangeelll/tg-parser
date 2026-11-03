@@ -52,21 +52,24 @@ def parse_telegram_preview(handle: str, before: str | int = None, fetch_all: boo
     handle = handle.split('/')[0].split('?')[0].strip()
 
     def fetch_single(before_param=None):
-        direct_url = f'https://t.me/s/{handle}'
-        if before_param:
-            direct_url += f'?before={before_param}'
-        
-        # 1. Try direct fetch first (works on Vercel / unblocked network)
-        try:
-            html_doc = _fetch(direct_url, timeout=5)
-            if 'tgme_widget_message' in html_doc:
-                return _parse_html_preview(handle, html_doc)
-        except Exception:
-            pass
+        for domain in ['telegram.me', 't.me']:
+            direct_url = f'https://{domain}/s/{handle}'
+            if before_param:
+                direct_url += f'?before={before_param}'
+            
+            # 1. Try direct fetch first (works locally and on Vercel)
+            try:
+                html_doc = _fetch(direct_url, timeout=5)
+                if 'tgme_widget_message' in html_doc:
+                    return _parse_html_preview(handle, html_doc)
+            except Exception:
+                pass
 
         # 2. Fallback to Jina with X-Return-Format: html
         try:
-            jina_url = f'{JINA_BASE}{direct_url}'
+            jina_url = f'{JINA_BASE}https://telegram.me/s/{handle}'
+            if before_param:
+                jina_url += f'?before={before_param}'
             html_doc = _fetch(jina_url, timeout=12, extra_headers={'X-Return-Format': 'html'})
             if 'tgme_widget_message' in html_doc:
                 return _parse_html_preview(handle, html_doc)
@@ -116,13 +119,15 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
     title = html.unescape(re.sub(r'<[^>]+>', '', title_m.group(1))).strip() if title_m else handle
 
     # Multi-pattern avatar detection
-    avatar_m = re.search(r'<img[^>]+src="([^"]+)"[^>]*class="[^"]*tgme_page_photo_image', html_doc)
+    avatar_m = re.search(r'class="[^"]*tgme_page_photo[^"]*"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"', html_doc)
+    if not avatar_m:
+        avatar_m = re.search(r'<img[^>]+src="([^"]+)"[^>]*class="[^"]*tgme_page_photo_image', html_doc)
     if not avatar_m:
         avatar_m = re.search(r'class="[^"]*tgme_page_photo_image[^"]*"[^>]*<img[^>]+src="([^"]+)"', html_doc)
     if not avatar_m:
-        avatar_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info[^"]*"[\s\S]*?<img[^>]+src="([^"]+)"', html_doc)
+        avatar_m = re.search(r'<i[^>]*class="[^"]*tgme_widget_message_user_photo[^"]*"[^>]*>\s*<img[^>]+src="([^"]+)"', html_doc)
     if not avatar_m:
-        avatar_m = re.search(r'<img[^>]+src="([^"]+)"', html_doc)
+        avatar_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info[^"]*"[\s\S]*?<img[^>]+src="([^"]+)"', html_doc)
     avatar = avatar_m.group(1) if avatar_m else None
     if avatar:
         avatar = re.sub(r'\\([_\-])', r'\1', avatar)
@@ -149,9 +154,20 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
             chunk,
             flags=re.IGNORECASE
         )
-        clean_chunk = re.sub(r'<[^>]*class="[^"]*(?:tgme_reaction|reaction_emoji)[^"]*"[\s\S]*?</div>', '', clean_chunk, flags=re.IGNORECASE)
+        clean_chunk = re.sub(r'<div[^>]*class="[^"]*(?:reactions|reaction)[^"]*"[\s\S]*?</div>', '', clean_chunk, flags=re.IGNORECASE)
+        clean_chunk = re.sub(r'<span[^>]*class="[^"]*tgme_reaction[^"]*"[\s\S]*?</span>', '', clean_chunk, flags=re.IGNORECASE)
 
-        text_m = re.search(r'<div[^>]*class="[^"]*tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)</div>', clean_chunk)
+        # Detect round video notes (кружочки) / voice messages / unsupported media
+        is_media_note = ('message_media_not_supported' in clean_chunk or 'text_not_supported_wrap' in clean_chunk)
+
+        # Target ONLY real message body: class="... js-message_text ..." (NEVER reply text)
+        text_m = re.search(r'<div[^>]*class="[^"]*\bjs-message_text\b[^"]*"[^>]*>([\s\S]*?)</div>', clean_chunk)
+        if not text_m:
+            for tm in re.finditer(r'<div[^>]*class="[^"]*tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)</div>', clean_chunk):
+                if 'js-message_reply_text' not in tm.group(0):
+                    text_m = tm
+                    break
+
         text = ''
         if text_m:
             text = html.unescape(re.sub(r'<br\s*/?>', '\n', text_m.group(1)))
@@ -183,7 +199,8 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
             'datetime': date_iso,
             'views': views,
             'images': photos[:6],
-            'videos': videos[:2]
+            'videos': videos[:2],
+            'isMediaNote': is_media_note
         })
 
     # Sort chronological (oldest top -> newest bottom)

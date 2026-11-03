@@ -696,6 +696,12 @@ body {
 }
 
 /* Modals */
+body.modal-open {
+  overflow: hidden !important;
+  height: 100vh !important;
+  touch-action: none;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -708,6 +714,7 @@ body {
   z-index: 100;
   opacity: 0;
   transition: opacity 0.2s ease;
+  overscroll-behavior: contain;
 }
 .modal-overlay.open {
   display: flex;
@@ -725,6 +732,7 @@ body {
   box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
   overflow: hidden;
   position: relative;
+  overscroll-behavior: contain;
 }
 
 /* Big Fullscreen Channel Reader Modal */
@@ -937,6 +945,38 @@ body {
   margin-bottom: 14px;
   border-radius: 12px;
   overflow: hidden;
+}
+
+.media-note-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(41, 182, 246, 0.08);
+  border: 1px solid rgba(41, 182, 246, 0.22);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.media-note-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.media-note-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.media-note-info strong {
+  font-size: 13.5px;
+  color: var(--tg-cyan);
+}
+
+.media-note-info small {
+  font-size: 11.5px;
+  color: var(--text-dim);
 }
 
 .post-media-grid img {

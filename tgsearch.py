@@ -48,6 +48,14 @@ _KNOWN_CHANNELS = {
     'даня ворон': ['danyavoron_yt', 'danyavoron'],
     'даняворон': ['danyavoron_yt'],
     'danya voron': ['danyavoron_yt'],
+    'yt cartel': ['YT_cartell', 'yt_cartell', 'ytcartell'],
+    'yt_cartel': ['YT_cartell', 'yt_cartell', 'ytcartell'],
+    'yt_cartell': ['YT_cartell'],
+    'ytcartel': ['YT_cartell'],
+    'ytcartell': ['YT_cartell'],
+    'картель': ['YT_cartell'],
+    'ют картель': ['YT_cartell'],
+    'картель ютуб': ['YT_cartell'],
 }
 
 USER_AGENT = (
@@ -129,6 +137,19 @@ def _handle_candidates(query: str) -> list[str]:
     if joined_remap not in candidates and len(joined_remap) >= 3:
         candidates.append(joined_remap)
 
+    # Strategy F: letter doubling and typo variations (e.g. cartel -> cartell)
+    if 'cartel' in raw.lower():
+        candidates.extend(['YT_cartell', 'yt_cartell', 'ytcartell'])
+    for p in [joined, underscored, raw.lower()]:
+        if p.endswith('l'):
+            candidates.append(f'{p}l')
+        elif p.endswith('ll'):
+            candidates.append(p[:-1])
+        if p.endswith('s'):
+            candidates.append(f'{p}s')
+        elif p.endswith('ss'):
+            candidates.append(p[:-1])
+
     # Deduplicate, keep valid handle chars only, length 3-32
     seen = set()
     result = []
@@ -138,7 +159,7 @@ def _handle_candidates(query: str) -> list[str]:
             seen.add(clean.lower())
             result.append(clean)
 
-    return result[:10]
+    return result[:14]
 
 
 def _search_terms(query: str) -> list[str]:
@@ -158,66 +179,70 @@ def _search_terms(query: str) -> list[str]:
 
 
 def _probe_direct_html(handle: str, timeout: int = 3) -> dict | None:
-    """Try direct Telegram preview fetch (fast on cloud/Vercel)."""
-    try:
-        url = f'https://t.me/s/{handle}'
-        req = urllib.request.Request(
-            url,
-            headers={
-                'User-Agent': USER_AGENT,
-                'Accept': 'text/html',
-                'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8'
+    """Try direct Telegram preview fetch (fast on cloud/Vercel and local)."""
+    for domain in ['telegram.me', 't.me']:
+        try:
+            url = f'https://{domain}/s/{handle}'
+            req = urllib.request.Request(
+                url,
+                headers={
+                    'User-Agent': USER_AGENT,
+                    'Accept': 'text/html,application/xhtml+xml',
+                    'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8'
+                }
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                html_doc = resp.read().decode('utf-8', errors='ignore')
+            if 'tgme_page_title' not in html_doc and 'tgme_channel_info' not in html_doc:
+                continue
+
+            # Title
+            t_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_header_title[^"]*"[^>]*>[\s\S]*?<span[^>]*dir="auto">([\s\S]*?)</span>', html_doc)
+            title = re.sub(r'<[^>]+>', '', t_m.group(1)).strip() if t_m else handle
+
+            # Avatar (can be inside <i class="tgme_page_photo_image"> or <div class="tgme_page_photo">)
+            a_m = re.search(r'class="[^"]*tgme_page_photo[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]+)"', html_doc)
+            if not a_m:
+                a_m = re.search(r'<img[^>]*class="[^"]*tgme_page_photo_image[^"]*"[^>]*src="([^"]+)"', html_doc)
+            avatar = a_m.group(1) if a_m else None
+
+            # Subscribers
+            sub_m = re.search(r'<span[^>]*class="[^"]*counter_value[^"]*"[^>]*>([\s\S]*?)</span>', html_doc)
+            sub_count = None
+            if sub_m:
+                raw = re.sub(r'<[^>]+>', '', sub_m.group(1)).replace(' ', '').replace(',', '.')
+                try:
+                    if 'K' in raw.upper():
+                        sub_count = int(float(raw.upper().replace('K', '')) * 1000)
+                    elif 'M' in raw.upper():
+                        sub_count = int(float(raw.upper().replace('M', '')) * 1_000_000)
+                    else:
+                        sub_count = int(float(raw))
+                except Exception:
+                    pass
+
+            # Description
+            d_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_description[^"]*"[^>]*>([\s\S]*?)</div>', html_doc)
+            desc = re.sub(r'<[^>]+>', '', d_m.group(1)).strip() if d_m else ''
+
+            return {
+                'handle': handle,
+                'name': title,
+                'summary': desc,
+                'avatar': avatar,
+                'memberCount': sub_count,
+                'categories': [],
+                'telegramUrl': f'https://t.me/{handle}',
+                '_source': 'direct_probe',
             }
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            html_doc = resp.read().decode('utf-8', errors='ignore')
-        if 'tgme_page_title' not in html_doc and 'tgme_channel_info' not in html_doc:
-            return None
-
-        # Title
-        t_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_header_title[^"]*"[^>]*>[\s\S]*?<span[^>]*dir="auto">([\s\S]*?)</span>', html_doc)
-        title = re.sub(r'<[^>]+>', '', t_m.group(1)).strip() if t_m else handle
-
-        # Avatar
-        a_m = re.search(r'<img[^>]*class="[^"]*tgme_page_photo_image[^"]*"[^>]*src="([^"]+)"', html_doc)
-        avatar = a_m.group(1) if a_m else None
-
-        # Subscribers
-        sub_m = re.search(r'<span[^>]*class="[^"]*counter_value[^"]*"[^>]*>([\s\S]*?)</span>', html_doc)
-        sub_count = None
-        if sub_m:
-            raw = re.sub(r'<[^>]+>', '', sub_m.group(1)).replace(' ', '').replace(',', '.')
-            try:
-                if 'K' in raw.upper():
-                    sub_count = int(float(raw.upper().replace('K', '')) * 1000)
-                elif 'M' in raw.upper():
-                    sub_count = int(float(raw.upper().replace('M', '')) * 1_000_000)
-                else:
-                    sub_count = int(float(raw))
-            except Exception:
-                pass
-
-        # Description
-        d_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_description[^"]*"[^>]*>([\s\S]*?)</div>', html_doc)
-        desc = re.sub(r'<[^>]+>', '', d_m.group(1)).strip() if d_m else ''
-
-        return {
-            'handle': handle,
-            'name': title,
-            'summary': desc,
-            'avatar': avatar,
-            'memberCount': sub_count,
-            'categories': [],
-            'telegramUrl': f'https://t.me/{handle}',
-            '_source': 'direct_probe',
-        }
-    except Exception:
-        return None
+        except Exception:
+            continue
+    return None
 
 
 def _probe_handle(handle: str) -> dict | None:
     """Probes channel using direct Telegram preview first, with Jina reader fallback."""
-    direct = _probe_direct_html(handle, timeout=2)
+    direct = _probe_direct_html(handle, timeout=3)
     if direct:
         return direct
     return _probe_handle_via_jina(handle, timeout=6)
@@ -225,10 +250,10 @@ def _probe_handle(handle: str) -> dict | None:
 
 def _probe_handle_via_jina(handle: str, timeout: int = 7) -> dict | None:
     """
-    Try to fetch t.me/s/{handle} via Jina reader mirror and parse basic info.
+    Try to fetch via Jina reader mirror using telegram.me.
     Returns a dict compatible with TGFind result format, or None if not found.
     """
-    url = f'{JINA_MIRROR}https://t.me/s/{handle}'
+    url = f'{JINA_MIRROR}https://telegram.me/s/{handle}'
     req = urllib.request.Request(
         url, headers={'User-Agent': USER_AGENT, 'Accept': 'text/plain'}
     )
@@ -370,17 +395,20 @@ def smart_search(query: str, item_type: str = 'channel', category: str | None = 
                 pool.submit(_probe_handle, h): h
                 for h in probed_handles
             }
-            for future in as_completed(future_map, timeout=12):
-                try:
-                    result = future.result()
-                    if result:
-                        key = result['handle'].lower()
-                        if key not in records:
-                            if key in ai_info.get('handles', []):
-                                result['_source'] = 'ai_matched'
-                            records[key] = result
-                except Exception:
-                    pass
+            try:
+                for future in as_completed(future_map, timeout=6):
+                    try:
+                        result = future.result()
+                        if result:
+                            key = result['handle'].lower()
+                            if key not in records:
+                                if key in ai_info.get('handles', []):
+                                    result['_source'] = 'ai_matched'
+                                records[key] = result
+                    except Exception:
+                        pass
+            except TimeoutError:
+                pass
 
     # ----------- LOCAL RE-RANKING -----------
     clean_q_lower = re.sub(r'[\s_\-]+', ' ', query.lower()).strip()
