@@ -2,53 +2,224 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
+// Helper for safe JSON localStorage reading
+function safeGetJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw || raw === 'undefined' || raw === 'null') return fallback;
+    const parsed = JSON.parse(raw);
+    return (parsed !== null && parsed !== undefined) ? parsed : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
 // State
 let catalog = new Map();
 let currentResults = [];
-let savedChannels = JSON.parse(localStorage.getItem('tg_saved_channels') || '[]');
 
-// Ensure default channels exist if empty
-if (!savedChannels || !savedChannels.length) {
-  savedChannels = [
+// Default 14 channels (exact channels from user folder t.me/addlist/UQM6EOgiI7JhM2Ni)
+const DEFAULT_PRESET_CHANNELS = [
+  {
+    id: 'z0domonety',
+    cleanHandle: 'z0domonety',
+    handle: '@z0domonety',
+    name: 'З Нуля До Монеты',
+    count: 28400,
+    description: 'Авторский блог про YouTube, монетизацию и создание контента.',
+    folderIds: ['all', 'favorites', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'yt_cartell',
+    cleanHandle: 'YT_cartell',
+    handle: '@YT_cartell',
+    name: 'YT Cartel | Лонг • AI • Автоматизація',
+    count: 1540,
+    description: 'Вчимо тому, за що інші беруть з вас гроші. YouTube • AI • Автоматизація',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'grisha_youtuber_2003',
+    cleanHandle: 'Grisha_Youtuber_2003',
+    handle: '@Grisha_Youtuber_2003',
+    name: 'Гриша Ютубер',
+    count: 4700,
+    description: 'Подключить монетизацию: вопросы по Ютубу и софту.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'danyavoron_yt',
+    cleanHandle: 'danyavoron_yt',
+    handle: '@danyavoron_yt',
+    name: 'Даня Ворон | Ютуб по-дорослому',
+    count: 3200,
+    description: 'Публичный Telegram-канал. Все про YouTube по-взрослому.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'salfetkatop',
+    cleanHandle: 'salfetkatop',
+    handle: '@salfetkatop',
+    name: 'Салфетка',
+    count: 5100,
+    description: 'YouTube кейси, лайфхаки та фішки монетизації.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'salfekta',
+    cleanHandle: 'salfekta',
+    handle: '@salfekta',
+    name: 'salfekta',
+    count: 2100,
+    description: 'Публичный Telegram-канал — нажми чтобы открыть ленту.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'diamondehead',
+    cleanHandle: 'diamondehead',
+    handle: '@diamondehead',
+    name: 'Лисий з YouTube',
+    count: 14800,
+    description: 'YouTube фишки, алгоритмы, удержание и заработок.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'monkeyclubmoney',
+    cleanHandle: 'monkeyclubmoney',
+    handle: '@monkeyclubmoney',
+    name: 'MONKEY CLUB - ЗАРАБОТОК НА ЮТУБЕ И ТЕЛЕГРАМ',
+    count: 8900,
+    description: 'Отчеты, фишки, заработок и создание контента.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'youtubelogovo',
+    cleanHandle: 'youtubelogovo',
+    handle: '@youtubelogovo',
+    name: 'Youtube Логово',
+    count: 12300,
+    description: 'Мультиязык, шансы, ошибки и практика YouTube.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'synergy_digital_group',
+    cleanHandle: 'Synergy_Digital_Group',
+    handle: '@Synergy_Digital_Group',
+    name: 'Synergy Digital Group',
+    count: 6500,
+    description: 'Digital & YouTube медиа.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'theyoutubemoves',
+    cleanHandle: 'theyoutubemoves',
+    handle: '@theyoutubemoves',
+    name: 'ютуберские движения',
+    count: 4100,
+    description: 'Тренды YouTube и трафик.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'fr1gech',
+    cleanHandle: 'fr1gech',
+    handle: '@fr1gech',
+    name: 'FR1GE про YouTube🇺🇸',
+    count: 8400,
+    description: 'Публичный Telegram-канал про американский YouTube.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'yutub',
+    cleanHandle: 'yutub',
+    handle: '@yutub',
+    name: 'Спорт Радар',
+    count: 232000,
+    description: 'Главные новости футбола. Результаты матчей, трансферы, аналитика.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  },
+  {
+    id: 'grishayoutube',
+    cleanHandle: 'grishayoutube',
+    handle: '@grishayoutube',
+    name: 'GB',
+    count: 1,
+    description: 'Публичный Telegram-канал — нажми чтобы открыть ленту.',
+    folderIds: ['all', 'addlist_UQM6EOgiI7JhM2Ni']
+  }
+];
+
+let savedChannels = safeGetJson('tg_saved_channels', []);
+if (!Array.isArray(savedChannels) || !savedChannels.length) {
+  savedChannels = [...DEFAULT_PRESET_CHANNELS];
+} else {
+  // Ensure default channels are not missing
+  DEFAULT_PRESET_CHANNELS.forEach(defCh => {
+    const existing = savedChannels.find(c => c.id === defCh.id || (c.cleanHandle && c.cleanHandle.toLowerCase() === defCh.cleanHandle.toLowerCase()));
+    if (!existing) {
+      savedChannels.push(defCh);
+    } else {
+      if (!existing.folderIds) existing.folderIds = ['all'];
+      if (!existing.folderIds.includes('addlist_UQM6EOgiI7JhM2Ni')) {
+        existing.folderIds.push('addlist_UQM6EOgiI7JhM2Ni');
+      }
+    }
+  });
+}
+
+// Migrate saved channels to ensure folderIds exists
+savedChannels = savedChannels.map(c => {
+  if (!c.folderIds || !Array.isArray(c.folderIds) || !c.folderIds.length) {
+    c.folderIds = ['all'];
+  }
+  return c;
+});
+
+// Folders State
+let folders = safeGetJson('tg_folders', null);
+if (!Array.isArray(folders) || !folders.length) {
+  folders = [
+    { id: 'all', name: 'Все каналы', icon: '📁', isDefault: true },
+    { id: 'favorites', name: 'Избранное', icon: '⭐️', isDefault: true },
     {
-      id: 'z0domonety',
-      cleanHandle: 'z0domonety',
-      handle: '@z0domonety',
-      name: 'З Нуля До Монеты',
-      count: 28400,
-      description: 'Авторский блог про YouTube, монетизацию и создание контента.',
-      folderIds: ['all', 'favorites']
-    },
-    {
-      id: 'yt_cartell',
-      cleanHandle: 'YT_cartell',
-      handle: '@YT_cartell',
-      name: 'YT Cartel | Лонг • AI • Автоматизація',
-      count: 1540,
-      description: 'YouTube • AI • Автоматизація. Корисні фішки та інструменти.',
-      folderIds: ['all']
-    },
-    {
-      id: 'danyavoron_yt',
-      cleanHandle: 'danyavoron_yt',
-      handle: '@danyavoron_yt',
-      name: 'Даня Ворон | Ютуб по-дорослому',
-      count: 3200,
-      description: 'Все про ведення YouTube-каналів та монетизацію.',
-      folderIds: ['all']
-    },
-    {
-      id: 'salfetkatop',
-      cleanHandle: 'salfetkatop',
-      handle: '@salfetkatop',
-      name: 'Салфетка',
-      count: 5100,
-      description: 'YouTube кейси та лайфхаки.',
-      folderIds: ['all']
+      id: 'addlist_UQM6EOgiI7JhM2Ni',
+      name: 'Ютуб ⭐️⭐️',
+      icon: '⭐️',
+      isDefault: false,
+      source: 'addlist',
+      chatCount: 12,
+      url: 'https://t.me/addlist/UQM6EOgiI7JhM2Ni'
     }
   ];
-  localStorage.setItem('tg_saved_channels', JSON.stringify(savedChannels));
 }
+
+// Ensure favorites folder exists
+if (!folders.some(f => f.id === 'favorites')) {
+  folders.splice(1, 0, { id: 'favorites', name: 'Избранное', icon: '⭐️', isDefault: true });
+}
+
+// Ensure addlist_UQM6EOgiI7JhM2Ni folder exists
+if (!folders.some(f => f.id === 'addlist_UQM6EOgiI7JhM2Ni')) {
+  folders.push({
+    id: 'addlist_UQM6EOgiI7JhM2Ni',
+    name: 'Ютуб ⭐️⭐️',
+    icon: '⭐️',
+    isDefault: false,
+    source: 'addlist',
+    chatCount: 12,
+    url: 'https://t.me/addlist/UQM6EOgiI7JhM2Ni'
+  });
+}
+
+try {
+  localStorage.setItem('tg_saved_channels', JSON.stringify(savedChannels));
+  localStorage.setItem('tg_folders', JSON.stringify(folders));
+} catch(e) {}
+
+// Populate catalog Map
+savedChannels.forEach(c => {
+  if (c && c.id) catalog.set(c.id, c);
+  if (c && c.cleanHandle) catalog.set(c.cleanHandle.toLowerCase(), c);
+});
 
 let activeType = 'channel';
 let activeCat = 'all';
@@ -58,25 +229,11 @@ let currentChannelData = null;
 let currentPostsData = [];
 let isAscendingOrder = true; // true = TG style (top: older, bottom: newer), false = newest first
 let filterPostText = '';
-
-// Folders & Favorites State
-let folders = JSON.parse(localStorage.getItem('tg_folders') || 'null');
-if (!folders || !folders.length) {
-  folders = [
-    { id: 'all', name: 'Все каналы', icon: '📁', isDefault: true },
-    { id: 'favorites', name: 'Избранное', icon: '⭐️', isDefault: true }
-  ];
-  localStorage.setItem('tg_folders', JSON.stringify(folders));
-}
-if (!folders.some(f => f.id === 'favorites')) {
-  folders.splice(1, 0, { id: 'favorites', name: 'Избранное', icon: '⭐️', isDefault: true });
-  localStorage.setItem('tg_folders', JSON.stringify(folders));
-}
 let activeFolderId = 'all';
-let currentSectionTab = 'search'; // 'search' or 'folders'
+let currentSectionTab = 'folders';
 let filterInFolderText = '';
 let channelForFolderAssignment = null;
-let savedFavoritePosts = JSON.parse(localStorage.getItem('tg_favorite_posts') || '[]');
+let savedFavoritePosts = safeGetJson('tg_favorite_posts', []);
 const postsMemoryCache = new Map();
 let activeWorkspaceChannelId = null;
 let sidebarFilterText = '';
@@ -110,16 +267,7 @@ function saveCachedPosts(handle, posts) {
   } catch(e) {}
 }
 
-// Migrate saved channels to ensure folderIds exists
-savedChannels = savedChannels.map(c => {
-  if (!c.folderIds || !Array.isArray(c.folderIds) || !c.folderIds.length) {
-    c.folderIds = ['all'];
-  }
-  return c;
-});
-localStorage.setItem('tg_saved_channels', JSON.stringify(savedChannels));
 
-// Fallback initial recommendations
 const INITIAL_PROMPTS = ['новости', 'технологии', 'дизайн', 'разработка', 'нейросети', 'крипта'];
 
 // Toast notification
@@ -1222,8 +1370,8 @@ async function performSearch(queryText = '') {
 
   currentQuery = input;
   isSearching = true;
-  $('#searchBtn').disabled = true;
-  $('#resultsHeading').textContent = `Результаты: «${input}»`;
+  $('#searchBtn')?.setAttribute('disabled', 'true'); $('#btnSidebarSearchGo')?.setAttribute('disabled', 'true');
+  if ($('#resultsHeading')) $('#resultsHeading').textContent = `Результаты: «${input}»`;
   renderCards();
 
   try {
@@ -1246,7 +1394,7 @@ async function performSearch(queryText = '') {
 
     currentResults = (data.results || []).map(normalizeChannel);
     if (data.ai_used) {
-      $('#resultsHeading').innerHTML = `Результаты: «${esc(input)}» <span style="font-size:11.5px;color:#38d39f;font-weight:700;margin-left:8px;background:rgba(56,211,159,0.12);padding:2px 8px;border-radius:10px;">🤖 ИИ активен</span>`;
+      if ($('#resultsHeading')) $('#resultsHeading').innerHTML = `Результаты: «${esc(input)}» <span style="font-size:11.5px;color:#38d39f;font-weight:700;margin-left:8px;background:rgba(56,211,159,0.12);padding:2px 8px;border-radius:10px;">🤖 ИИ активен</span>`;
     }
     if (!currentResults.length && !data.warning) {
       notify('По запросу ничего не найдено');
@@ -1261,7 +1409,7 @@ async function performSearch(queryText = '') {
     `;
   } finally {
     isSearching = false;
-    $('#searchBtn').disabled = false;
+    $('#searchBtn')?.removeAttribute('disabled'); $('#btnSidebarSearchGo')?.removeAttribute('disabled');
     renderCards();
   }
 }
@@ -1271,27 +1419,43 @@ async function fetchSingleChannel(value) {
   let handle = value.replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, '').replace(/^@/, '').split('/')[0].split('?')[0].trim();
   if (!handle) return;
 
-  isSearching = true;
-  $('#searchBtn').disabled = true;
-  $('#resultsHeading').textContent = `Канал @${handle}`;
-  renderCards();
+  const existing = catalog.get(handle.toLowerCase()) || savedChannels.find(c => (c.cleanHandle || '').toLowerCase() === handle.toLowerCase());
+  if (existing) {
+    openChannelInWorkspace(existing.id);
+    return;
+  }
 
+  notify(`Загрузка канала @${handle}...`);
   try {
     const res = await fetch(`/api/channel?handle=${encodeURIComponent(handle)}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Канал не найден');
 
     const channel = normalizeChannel(data.channel);
-    currentResults = [channel];
-    openChannelModal(channel.id);
+    if (!channel.folderIds || !channel.folderIds.length) {
+      channel.folderIds = ['all'];
+      if (activeFolderId && activeFolderId !== 'all') {
+        channel.folderIds.push(activeFolderId);
+      }
+    }
+    catalog.set(channel.id, channel);
+    catalog.set(channel.cleanHandle.toLowerCase(), channel);
+    if (!savedChannels.some(c => c.id === channel.id)) {
+      savedChannels.unshift(channel);
+      saveFolders();
+      renderFoldersView();
+    }
+    openChannelInWorkspace(channel.id);
   } catch (err) {
     const fallbackChannel = normalizeChannel({ handle, name: handle });
-    currentResults = [fallbackChannel];
-    openChannelModal(fallbackChannel.id);
-  } finally {
-    isSearching = false;
-    $('#searchBtn').disabled = false;
-    renderCards();
+    catalog.set(fallbackChannel.id, fallbackChannel);
+    catalog.set(fallbackChannel.cleanHandle.toLowerCase(), fallbackChannel);
+    if (!savedChannels.some(c => c.id === fallbackChannel.id)) {
+      savedChannels.unshift(fallbackChannel);
+      saveFolders();
+      renderFoldersView();
+    }
+    openChannelInWorkspace(fallbackChannel.id);
   }
 }
 
@@ -1414,96 +1578,7 @@ function renderModalSidebar() {
 
 // Open Channel Modal
 async function openChannelModal(id) {
-  const channel = catalog.get(id) || savedChannels.find(c => c.id === id);
-  if (!channel) return;
-
-  currentChannelData = channel;
-  currentPostsData = [];
-  filterPostText = '';
-  $('#modalSearchPosts').value = '';
-
-  renderModalSidebar();
-
-  const initial = (channel.name || channel.cleanHandle || '?')[0].toUpperCase();
-  const avatarHtml = channel.avatar 
-    ? `<img src="${esc(channel.avatar)}" alt="${esc(channel.name)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">` 
-    : initial;
-
-  $('#modalChannelHead').innerHTML = `
-    <div class="modal-avatar" style="width:52px;height:52px;border-radius:14px;overflow:hidden;flex-shrink:0;">${avatarHtml}</div>
-    <div style="min-width:0;">
-      <div class="modal-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px;">${esc(channel.name)}</div>
-      <div class="modal-handle">${esc(channel.handle)} ${channel.count != null ? '· ' + formatSubs(channel.count) + ' подписчиков' : ''}</div>
-    </div>
-  `;
-
-  if (channel.description) {
-    $('#modalChannelDesc').textContent = channel.description;
-    $('#modalChannelDesc').style.display = 'block';
-  } else {
-    $('#modalChannelDesc').style.display = 'none';
-  }
-
-  $('#modalOpenTelegram').href = channel.url || `https://t.me/${channel.cleanHandle}`;
-  $('#postsContainer').innerHTML = `
-    <div class="empty-box" style="padding: 40px 0;">
-      <div class="empty-icon">⏳</div>
-      <div>Загружаем ленту сообщений канала...</div>
-    </div>
-  `;
-
-  $('#channelModal').classList.add('open');
-  document.body.classList.add('modal-open');
-
-  try {
-    const res = await fetch(`/api/posts?handle=${encodeURIComponent(channel.cleanHandle)}&all=1`);
-    const data = await res.json();
-    
-    if (data.channel) {
-      if (data.channel.avatar) {
-        channel.avatar = data.channel.avatar;
-        updateChannelAvatarInDom(channel.cleanHandle, data.channel.avatar);
-        renderModalSidebar();
-      }
-      if (data.channel.name && (!channel.name || channel.name === channel.cleanHandle)) {
-        channel.name = data.channel.name;
-        const titleEl = $('#modalChannelHead')?.querySelector('.modal-title');
-        if (titleEl) titleEl.textContent = channel.name;
-        renderModalSidebar();
-      }
-    }
-
-    if (data.posts && data.posts.length) {
-      currentPostsData = data.posts;
-      renderPosts();
-      
-      // Auto-scroll to the bottom in Telegram mode (newest messages at the bottom)
-      setTimeout(() => {
-        const container = $('#postsContainer');
-        if (isAscendingOrder) {
-          container.scrollTop = container.scrollHeight;
-        } else {
-          container.scrollTop = 0;
-        }
-      }, 100);
-
-      notify(`Загружены все сообщения (${currentPostsData.length} постов)`);
-    } else {
-      $('#postsContainer').innerHTML = `
-        <div class="empty-box" style="padding: 40px 0;">
-          <div class="empty-icon">📭</div>
-          <div>Лента сообщений канала пуста или является приватной.</div>
-        </div>
-      `;
-    }
-  } catch (err) {
-    $('#postsContainer').innerHTML = `
-      <div class="empty-box" style="padding: 40px 0;">
-        <div class="empty-icon">⚠️</div>
-        <div>Не удалось загрузить сообщения: ${esc(err.message)}</div>
-      </div>
-    `;
-  }
+  openChannelInWorkspace(id);
 }
 
 // Refresh channel posts (fetching latest from Telegram)
@@ -2008,119 +2083,31 @@ function renderSidebarSearchResults(localMatches, globalResults, query) {
 
 
 function initEvents() {
-  $('#searchBtn').onclick = () => performSearch();
-  $('#searchInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter') performSearch();
-  });
-
-  $('#typeSwitch').onclick = e => {
-    const btn = e.target.closest('.type-btn');
-    if (!btn) return;
-    $$('#typeSwitch .type-btn').forEach(b => b.classList.toggle('active', b === btn));
-    activeType = btn.dataset.type;
-    performSearch();
-  };
-
-  $('#categoryTags').onclick = e => {
-    const btn = e.target.closest('.tag-btn');
-    if (!btn) return;
-    $$('#categoryTags .tag-btn').forEach(b => b.classList.toggle('active', b === btn));
-    activeCat = btn.dataset.cat;
-    if (activeCat !== 'all') {
-      $('#searchInput').value = btn.textContent.trim();
-    }
-    performSearch();
-  };
-
-  // Section tabs switcher
-  const navTabs = $('#mainSectionNav');
-  if (navTabs) {
-    navTabs.onclick = e => {
-      const btn = e.target.closest('.section-tab');
-      if (btn && btn.dataset.tab) {
-        switchSection(btn.dataset.tab);
-      }
-    };
-  }
-
-  // Unified card list click handler (supports Search results & Folder results)
-  const handleCardListClick = e => {
-    const actionBtn = e.target.closest('[data-action]');
-    if (actionBtn) {
-      e.stopPropagation();
-      const action = actionBtn.dataset.action;
-      const chId = actionBtn.dataset.id;
-      if (action === 'save') {
-        toggleSave(chId);
-      } else if (action === 'copy') {
-        copyToClipboard(actionBtn.dataset.text, 'Ник канала скопирован!');
-      } else if (action === 'folder') {
-        openAssignFolderModal(chId);
-      } else if (action === 'remove-from-folder') {
-        const channel = savedChannels.find(c => c.id === chId);
-        if (channel && activeFolderId !== 'all') {
-          channel.folderIds = (channel.folderIds || []).filter(id => id !== activeFolderId);
-          if (!channel.folderIds.length) channel.folderIds = ['all'];
-          saveFolders();
-          renderFoldersView();
-          notify(`Канал удалён из этой папки`);
-        }
-      }
-      return;
-    }
-
-    const card = e.target.closest('[data-channel-id]');
-    if (card) {
-      const chId = card.dataset.channelId;
-      const ch = catalog.get(chId);
-      if (ch && !isSaved(ch.id)) {
-        ch.folderIds = ['all'];
-        savedChannels.unshift(ch);
-        saveFolders();
-      }
-      switchSection('folders');
-      openChannelInWorkspace(chId);
-    }
-  };
-
-  const cardsList = $('#cardsList');
-  if (cardsList) cardsList.onclick = handleCardListClick;
-
-  const folderCardsList = $('#folderCardsList');
-  if (folderCardsList) folderCardsList.onclick = handleCardListClick;
-
-  // Folder tabs click
-  const folderTabs = $('#folderTabsList');
-  if (folderTabs) {
-    folderTabs.onclick = e => {
-      const pill = e.target.closest('.folder-pill');
-      if (pill && pill.dataset.folderId) {
-        activeFolderId = pill.dataset.folderId;
-        renderFoldersView();
-      }
-    };
-  }
-
-  // Addlist modal
+  // Modal: Addlist
   const addlistModal = $('#addlistModal');
   const openAddlist = () => {
-    $('#addlistLinkInput').value = '';
-    $('#addlistExtraHandles').value = '';
+    if (!addlistModal) return;
+    const inp = $('#addlistLinkInput');
+    const extra = $('#addlistExtraHandles');
+    if (inp) inp.value = '';
+    if (extra) extra.value = '';
     addlistModal.classList.add('open');
     document.body.classList.add('modal-open');
-    setTimeout(() => $('#addlistLinkInput').focus(), 50);
+    if (inp) setTimeout(() => inp.focus(), 50);
   };
   const closeAddlist = () => {
-    addlistModal.classList.remove('open');
-    document.body.classList.remove('modal-open');
+    if (addlistModal) {
+      addlistModal.classList.remove('open');
+      document.body.classList.remove('modal-open');
+    }
   };
-  if ($('#btnOpenAddlistModal')) $('#btnOpenAddlistModal').onclick = openAddlist;
+  if ($('#btnSidebarAddlist')) $('#btnSidebarAddlist').onclick = openAddlist;
   if ($('#closeAddlistModal')) $('#closeAddlistModal').onclick = closeAddlist;
   if ($('#cancelAddlistBtn')) $('#cancelAddlistBtn').onclick = closeAddlist;
   if ($('#submitAddlistBtn')) {
     $('#submitAddlistBtn').onclick = async () => {
-      const url = $('#addlistLinkInput').value.trim();
-      const extra = $('#addlistExtraHandles').value.trim();
+      const url = $('#addlistLinkInput')?.value.trim();
+      const extra = $('#addlistExtraHandles')?.value.trim();
       if (!url) {
         notify('Вставьте ссылку на папку Telegram (t.me/addlist/...)');
         return;
@@ -2130,24 +2117,28 @@ function initEvents() {
     };
   }
 
-  // New folder modal
+  // Modal: New Folder
   const newFolderModal = $('#newFolderModal');
   const openNewFolder = () => {
-    $('#newFolderNameInput').value = '';
+    if (!newFolderModal) return;
+    const inp = $('#newFolderNameInput');
+    if (inp) inp.value = '';
     newFolderModal.classList.add('open');
     document.body.classList.add('modal-open');
-    setTimeout(() => $('#newFolderNameInput').focus(), 50);
+    if (inp) setTimeout(() => inp.focus(), 50);
   };
   const closeNewFolder = () => {
-    newFolderModal.classList.remove('open');
-    document.body.classList.remove('modal-open');
+    if (newFolderModal) {
+      newFolderModal.classList.remove('open');
+      document.body.classList.remove('modal-open');
+    }
   };
-  if ($('#btnOpenNewFolderModal')) $('#btnOpenNewFolderModal').onclick = openNewFolder;
+  if ($('#btnSidebarNewFolder')) $('#btnSidebarNewFolder').onclick = openNewFolder;
   if ($('#closeNewFolderModal')) $('#closeNewFolderModal').onclick = closeNewFolder;
   if ($('#cancelNewFolderBtn')) $('#cancelNewFolderBtn').onclick = closeNewFolder;
   if ($('#submitNewFolderBtn')) {
     $('#submitNewFolderBtn').onclick = () => {
-      const name = $('#newFolderNameInput').value.trim();
+      const name = $('#newFolderNameInput')?.value.trim();
       if (!name) {
         notify('Введите название папки');
         return;
@@ -2157,11 +2148,13 @@ function initEvents() {
     };
   }
 
-  // Assign folder modal
+  // Modal: Assign Folder
   const assignModal = $('#assignFolderModal');
   const closeAssignModal = () => {
-    assignModal.classList.remove('open');
-    document.body.classList.remove('modal-open');
+    if (assignModal) {
+      assignModal.classList.remove('open');
+      document.body.classList.remove('modal-open');
+    }
   };
   if ($('#closeAssignFolderModal')) $('#closeAssignFolderModal').onclick = closeAssignModal;
   if ($('#saveAssignFoldersBtn')) $('#saveAssignFoldersBtn').onclick = saveChannelFolderAssignments;
@@ -2172,59 +2165,23 @@ function initEvents() {
         const nf = { id: 'folder_' + Date.now(), name: name.trim(), icon: '📁', isDefault: false };
         folders.push(nf);
         saveFolders();
-        openAssignFolderModal(channelForFolderAssignment.id);
+        if (channelForFolderAssignment) {
+          openAssignFolderModal(channelForFolderAssignment.id);
+        }
         notify(`Папка «${nf.name}» создана!`);
       }
     };
   }
 
-  // Sidebar Search within Folders in Channel Modal
-  const sidebarFilterInput = $('#modalSidebarFilterInput');
-  if (sidebarFilterInput) {
-    sidebarFilterInput.oninput = e => {
-      sidebarFilterText = e.target.value.trim();
-      renderModalSidebar();
-    };
-  }
-
-  // Sidebar Toggle Button (Desktop & Mobile)
-  const toggleBtn = $('#btnToggleSidebar');
-  const tgSidebar = $('#modalTgSidebar');
-  if (toggleBtn && tgSidebar) {
-    toggleBtn.onclick = () => {
-      tgSidebar.classList.toggle('collapsed');
-    };
-  }
-
-  // Mobile Close Sidebar Button
-  const closeSidebarMobile = $('#btnCloseSidebarMobile');
-  if (closeSidebarMobile && tgSidebar) {
-    closeSidebarMobile.onclick = () => {
-      tgSidebar.classList.add('collapsed');
-    };
-  }
-
-  // Close modal
-  $('#closeChannelModal').onclick = closeModal;
-  $('#channelModal').onclick = e => {
-    if (e.target === $('#channelModal')) closeModal();
-  };
+  // Escape key closes open modals
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if ($('#channelModal').classList.contains('open')) closeModal();
-      if ($('#addlistModal').classList.contains('open')) closeAddlist();
-      if ($('#newFolderModal').classList.contains('open')) closeNewFolder();
-      if ($('#assignFolderModal').classList.contains('open')) closeAssignModal();
+      if (addlistModal?.classList.contains('open')) closeAddlist();
+      if (newFolderModal?.classList.contains('open')) closeNewFolder();
+      if (assignModal?.classList.contains('open')) closeAssignModal();
+      if ($('#apiModal')?.classList.contains('open')) $('#apiModal').classList.remove('open');
     }
   });
-
-  
-  // --- Telegram Workspace Event Listeners ---
-  // (Search listeners are unified in init())
-
-  // Sidebar header actions
-  if ($('#btnSidebarAddlist')) $('#btnSidebarAddlist').onclick = openAddlist;
-  if ($('#btnSidebarNewFolder')) $('#btnSidebarNewFolder').onclick = openNewFolder;
 
   // Sidebar toggle
   if ($('#btnTgSidebarToggleApp')) {
@@ -2260,9 +2217,7 @@ function initEvents() {
     $('#btnTgOrderToggle').onclick = () => {
       isAscendingOrder = !isAscendingOrder;
       const label = isAscendingOrder ? '⬆ Снизу новые' : '⬇ Сверху новые';
-      const tgLabel = isAscendingOrder ? '⬆ Снизу новые (как в TG)' : '⬇ Сверху новые';
       if ($('#appOrderToggleText')) $('#appOrderToggleText').textContent = label;
-      if ($('#orderToggleText')) $('#orderToggleText').textContent = tgLabel;
       renderWorkspacePosts(false);
       setTimeout(() => {
         const c = $('#tgAppPostsContainer');
@@ -2275,25 +2230,16 @@ function initEvents() {
     $('#btnTgCopyAll').onclick = copyAllPosts;
   }
 
-  // Workspace scroll to bottom
+  // Workspace Scroll to Bottom Button
   const appPostsBox = $('#tgAppPostsContainer');
   if (appPostsBox) {
     appPostsBox.addEventListener('scroll', () => {
       const diff = appPostsBox.scrollHeight - appPostsBox.scrollTop - appPostsBox.clientHeight;
       $('#btnTgAppScrollBottom')?.classList.toggle('show', diff > 240);
     });
-  }
 
-  if ($('#btnTgAppScrollBottom') && appPostsBox) {
-    $('#btnTgAppScrollBottom').onclick = () => {
-      appPostsBox.scrollTo({ top: appPostsBox.scrollHeight, behavior: 'smooth' });
-    };
-  }
-
-  // Workspace post clicks (bookmarking, copy, in-app links)
-  if (appPostsBox) {
+    // Intercept clicks inside chat (bookmarking post, copy post, in-app links)
     appPostsBox.onclick = e => {
-      // 1. Post Bookmark Button (Save to Favorites)
       const favBtn = e.target.closest('[data-post-fav-id]');
       if (favBtn) {
         e.preventDefault();
@@ -2302,7 +2248,6 @@ function initEvents() {
         return;
       }
 
-      // 2. Copy post text
       const copyBtn = e.target.closest('[data-copy-post]');
       if (copyBtn) {
         e.preventDefault();
@@ -2312,7 +2257,6 @@ function initEvents() {
         return;
       }
 
-      // 3. In-app jump to post
       const jumpBtn = e.target.closest('.tg-inapp-jump');
       if (jumpBtn) {
         e.preventDefault();
@@ -2330,7 +2274,6 @@ function initEvents() {
         return;
       }
 
-      // 4. In-app open channel
       const chBtn = e.target.closest('.tg-inapp-channel');
       if (chBtn) {
         e.preventDefault();
@@ -2343,90 +2286,22 @@ function initEvents() {
     };
   }
 
-  // Refresh posts button
-  const refreshBtn = $('#modalRefreshPosts');
-  if (refreshBtn) {
-    refreshBtn.onclick = refreshChannelPosts;
+  if ($('#btnTgAppScrollBottom') && appPostsBox) {
+    $('#btnTgAppScrollBottom').onclick = () => {
+      appPostsBox.scrollTo({ top: appPostsBox.scrollHeight, behavior: 'smooth' });
+    };
   }
 
-  // Order switch
-  $('#modalOrderToggle').onclick = () => {
-    isAscendingOrder = !isAscendingOrder;
-    $('#orderToggleText').textContent = isAscendingOrder ? '⬆ Снизу новые (как в TG)' : '⬇ Сверху новые';
-    renderPosts();
-    setTimeout(() => {
-      const c = $('#postsContainer');
-      if (isAscendingOrder) {
-        c.scrollTop = c.scrollHeight;
-      } else {
-        c.scrollTop = 0;
-      }
-    }, 50);
-  };
-
-  // Search within posts
-  $('#modalSearchPosts').addEventListener('input', e => {
-    filterPostText = e.target.value.trim();
-    renderPosts();
-  });
-
-  // Action buttons
-  $('#modalCopyAllPosts').onclick = copyAllPosts;
-  $('#modalDownloadJson').onclick = exportChannelJson;
-
-  // Jump to bottom button
-  const postsBox = $('#postsContainer');
-  postsBox.addEventListener('scroll', () => {
-    const diff = postsBox.scrollHeight - postsBox.scrollTop - postsBox.clientHeight;
-    $('#btnScrollBottom').classList.toggle('show', diff > 280);
-  });
-
-  $('#btnScrollBottom').onclick = () => {
-    postsBox.scrollTo({ top: postsBox.scrollHeight, behavior: 'smooth' });
-  };
-
-  // Intercept clicks inside chat (jumping to post or opening another channel)
-  postsBox.onclick = e => {
-    // Copy post text
-    const copyBtn = e.target.closest('[data-copy-post]');
-    if (copyBtn) {
-      e.preventDefault();
-      copyToClipboard(copyBtn.dataset.copyPost, 'Текст сообщения скопирован!');
-      copyBtn.classList.add('copied');
-      setTimeout(() => copyBtn.classList.remove('copied'), 1500);
-      return;
-    }
-
-    // In-app jump to another post in same channel
-    const jumpBtn = e.target.closest('.tg-inapp-jump');
-    if (jumpBtn) {
-      e.preventDefault();
-      const pid = jumpBtn.dataset.jumpPost;
-      jumpToPost(pid);
-      return;
-    }
-
-    // In-app open another channel
-    const chBtn = e.target.closest('.tg-inapp-channel');
-    if (chBtn) {
-      e.preventDefault();
-      const targetCh = chBtn.dataset.openChannel;
-      if (targetCh) {
-        fetchSingleChannel(targetCh);
-      }
-      return;
-    }
-  };
-
   // API modal
-  const openApi = () => $('#apiModal').classList.add('open');
-  const closeApi = () => $('#apiModal').classList.remove('open');
-  $('#openApiModal').onclick = openApi;
-  if ($('#promoApiBtn')) $('#promoApiBtn').onclick = openApi;
-  $('#closeApiModal').onclick = closeApi;
-  $('#apiModal').onclick = e => {
-    if (e.target === $('#apiModal')) closeApi();
-  };
+  const openApi = () => $('#apiModal')?.classList.add('open');
+  const closeApi = () => $('#apiModal')?.classList.remove('open');
+  if ($('#openApiModal')) $('#openApiModal').onclick = openApi;
+  if ($('#closeApiModal')) $('#closeApiModal').onclick = closeApi;
+  if ($('#apiModal')) {
+    $('#apiModal').onclick = e => {
+      if (e.target === $('#apiModal')) closeApi();
+    };
+  }
 
   $$('.copy-code-btn').forEach(btn => {
     btn.onclick = () => {
@@ -2438,21 +2313,22 @@ function initEvents() {
   // Theme toggle
   const savedTheme = localStorage.getItem('tg_theme') || 'dark';
   document.documentElement.setAttribute('data-theme', savedTheme);
-  $('#themeToggle').onclick = () => {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('tg_theme', next);
-    notify(`Включена ${next === 'dark' ? 'тёмная' : 'светлая'} тема`);
-  };
+  if ($('#themeToggle')) {
+    $('#themeToggle').onclick = () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('tg_theme', next);
+      notify(`Включена ${next === 'dark' ? 'тёмная' : 'светлая'} тема`);
+    };
+  }
 }
 
-// Initial load
 // Unified Application Initial Load
 async function init() {
-  initEvents();
-  renderFolderTabs();
-  renderFoldersView();
+  try { initEvents(); } catch(e) { console.error('initEvents error:', e); }
+  try { renderFolderTabs(); } catch(e) { console.error('renderFolderTabs error:', e); }
+  try { renderFoldersView(); } catch(e) { console.error('renderFoldersView error:', e); }
 
   // Category tags in sidebar
   $$('#sidebarCategoryTags .cat-pill').forEach(pill => {
@@ -2468,7 +2344,7 @@ async function init() {
         const topicMap = {
           'youtube': 'Ютуб',
           'news': 'Новости',
-          'tech': 'Технологии',
+          'tech': 'IT',
           'crypto': 'Крипта',
           'business': 'Бизнес',
           'design': 'Дизайн'
@@ -2525,9 +2401,17 @@ async function init() {
   }
 
   // Auto-open first channel in workspace on load (0ms from cache)
-  if (savedChannels.length > 0) {
-    openChannelInWorkspace(savedChannels[0].id);
+  try {
+    if (savedChannels.length > 0) {
+      openChannelInWorkspace(savedChannels[0].id);
+    }
+  } catch(e) {
+    console.error('Auto open channel error:', e);
   }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

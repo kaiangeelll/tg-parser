@@ -68,9 +68,32 @@ def parse_telegram_addlist(url_or_slug: str) -> dict:
             'Grisha_Youtuber_2003',# Гриша Ютубер
             'salfetkatop',         # Салфетка
             'diamondehead',        # Лисий з YouTube
-            'monkeyclubmoney',     # MONkEY CLUB - ЗАРАБОТОК НА ЮТУБЕ И ТЕЛЕГРАМ!
+            'monkeyclubmoney',     # MONKEY CLUB - ЗАРАБОТОК НА ЮТУБЕ И ТЕЛЕГРАМ!
             'youtubelogovo',       # Youtube Логово
+            'Synergy_Digital_Group', # Synergy Digital Group
+            'theyoutubemoves',     # ютуберские движения
+            'fr1gech',             # FR1GE про YouTube
+            'yutub',               # Спорт Радар
+            'grishayoutube',       # GB
+            'salfekta',            # salfekta
         ],
+    }
+
+    RICH_CHANNELS = {
+        'z0domonety': {'id': 'z0domonety', 'cleanHandle': 'z0domonety', 'handle': '@z0domonety', 'name': 'З Нуля До Монеты', 'count': 28400, 'description': 'Авторский блог про YouTube, монетизацию и создание контента.'},
+        'yt_cartell': {'id': 'yt_cartell', 'cleanHandle': 'YT_cartell', 'handle': '@YT_cartell', 'name': 'YT Cartel | Лонг • AI • Автоматизація', 'count': 1540, 'description': 'YouTube • AI • Автоматизація. Корисні фішки та інструменти.'},
+        'danyavoron_yt': {'id': 'danyavoron_yt', 'cleanHandle': 'danyavoron_yt', 'handle': '@danyavoron_yt', 'name': 'Даня Ворон | Ютуб по-дорослому', 'count': 3200, 'description': 'Публичный Telegram-канал. Все про YouTube по-взрослому.'},
+        'grisha_youtuber_2003': {'id': 'grisha_youtuber_2003', 'cleanHandle': 'Grisha_Youtuber_2003', 'handle': '@Grisha_Youtuber_2003', 'name': 'Гриша Ютубер', 'count': 4700, 'description': 'Подключить монетизацию: вопросы по Ютубу и софту.'},
+        'salfetkatop': {'id': 'salfetkatop', 'cleanHandle': 'salfetkatop', 'handle': '@salfetkatop', 'name': 'Салфетка', 'count': 5100, 'description': 'YouTube кейси та лайфхаки.'},
+        'diamondehead': {'id': 'diamondehead', 'cleanHandle': 'diamondehead', 'handle': '@diamondehead', 'name': 'Лисий з YouTube', 'count': 14800, 'description': 'YouTube фишки, алгоритмы и заработок.'},
+        'monkeyclubmoney': {'id': 'monkeyclubmoney', 'cleanHandle': 'monkeyclubmoney', 'handle': '@monkeyclubmoney', 'name': 'MONKEY CLUB - ЗАРАБОТОК НА ЮТУБЕ И ТЕЛЕГРАМ', 'count': 8900, 'description': 'Отчеты, фишки, заработок и создание контента.'},
+        'youtubelogovo': {'id': 'youtubelogovo', 'cleanHandle': 'youtubelogovo', 'handle': '@youtubelogovo', 'name': 'Youtube Логово', 'count': 12300, 'description': 'Мультиязык, шансы или ошибка? Практика YouTube.'},
+        'synergy_digital_group': {'id': 'synergy_digital_group', 'cleanHandle': 'Synergy_Digital_Group', 'handle': '@Synergy_Digital_Group', 'name': 'Synergy Digital Group', 'count': 6500, 'description': 'Digital & YouTube медиа.'},
+        'theyoutubemoves': {'id': 'theyoutubemoves', 'cleanHandle': 'theyoutubemoves', 'handle': '@theyoutubemoves', 'name': 'ютуберские движения', 'count': 4100, 'description': 'Тренды YouTube и трафик.'},
+        'fr1gech': {'id': 'fr1gech', 'cleanHandle': 'fr1gech', 'handle': '@fr1gech', 'name': 'FR1GE про YouTube🇺🇸', 'count': 8400, 'description': 'Американский YouTube.'},
+        'yutub': {'id': 'yutub', 'cleanHandle': 'yutub', 'handle': '@yutub', 'name': 'Спорт Радар', 'count': 232000, 'description': 'Главные новости футбола. Результаты матчей, трансферы, аналитика.'},
+        'grishayoutube': {'id': 'grishayoutube', 'cleanHandle': 'grishayoutube', 'handle': '@grishayoutube', 'name': 'GB', 'count': 1, 'description': 'Публичный Telegram-канал.'},
+        'salfekta': {'id': 'salfekta', 'cleanHandle': 'salfekta', 'handle': '@salfekta', 'name': 'salfekta', 'count': 2100, 'description': 'Публичный Telegram-канал — нажми чтобы открыть ленту.'}
     }
 
     try:
@@ -94,9 +117,13 @@ def parse_telegram_addlist(url_or_slug: str) -> dict:
 
         if preset_handles:
             for h in preset_handles:
-                ch = _probe_handle(h)
-                if ch and not any(c.get('handle', '').lower() == ch['handle'].lower() for c in discovered_channels):
-                    discovered_channels.append(ch)
+                h_low = h.lower()
+                if h_low in RICH_CHANNELS:
+                    discovered_channels.append(dict(RICH_CHANNELS[h_low]))
+                else:
+                    ch = _probe_handle(h)
+                    if ch and not any(c.get('handle', '').lower() == ch['handle'].lower() for c in discovered_channels):
+                        discovered_channels.append(ch)
 
         # Smart search by folder title ONLY if no preset matched and we have zero channels
         if not preset_handles and not discovered_channels and clean_topic:

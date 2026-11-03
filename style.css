@@ -2037,7 +2037,7 @@ body.modal-open {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 280px;
+  max-width: 480px;
 }
 
 .tg-chat-head-subs {

@@ -68,6 +68,38 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self.send_json(502, {'error': str(e)})
 
+        # API: /api/addlist
+        if parsed.path == '/api/addlist':
+            try:
+                from api.addlist import parse_telegram_addlist
+                query_params = parse_qs(parsed.query)
+                target = query_params.get('url', [''])[0].strip() or query_params.get('slug', [''])[0].strip()
+                if not target:
+                    return self.send_json(400, {'error': 'Укажите параметр ?url= или ?slug='})
+                res = parse_telegram_addlist(target)
+                return self.send_json(200, res)
+            except Exception as e:
+                return self.send_json(502, {'error': str(e)})
+
+        # API: /api/search (GET)
+        if parsed.path == '/api/search':
+            try:
+                query_params = parse_qs(parsed.query)
+                query = query_params.get('q', [''])[0].strip() or query_params.get('query', [''])[0].strip()
+                item_type = query_params.get('type', ['channel'])[0].strip()
+                category = query_params.get('category', [None])[0]
+                if not query:
+                    return self.send_json(400, {'error': 'Запрос не может быть пустым'})
+                data = tgsearch.smart_search(
+                    query,
+                    item_type=item_type,
+                    category=category,
+                    tgfind_rpc=tgfind.rpc,
+                )
+                return self.send_json(200, data)
+            except Exception as e:
+                return self.send_json(502, {'error': str(e)})
+
         # Static files
         clean_path = parsed.path.lstrip('/')
         if not clean_path or clean_path == 'index.html':
