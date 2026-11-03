@@ -1965,3 +1965,202 @@ body.modal-open {
     align-items: flex-start;
   }
 }
+
+/* ==========================================================================
+   Telegram Desktop Workspace & Liquid Glass Styles
+   ========================================================================== */
+.tg-workspace-container {
+  width: 100%;
+  height: calc(100vh - 135px);
+  min-height: 620px;
+  max-height: 940px;
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  background: #070a0f;
+}
+
+.liquid-glass-container {
+  background: rgba(11, 16, 26, 0.78) !important;
+  backdrop-filter: blur(32px) saturate(210%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(210%) !important;
+}
+
+.tg-chat-header {
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  background: rgba(13, 20, 32, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 10;
+  gap: 12px;
+}
+
+.tg-chat-head-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tg-chat-head-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tg-chat-head-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tg-chat-head-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.tg-chat-head-subs {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.tg-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tg-chat-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  background: radial-gradient(circle at 50% 50%, rgba(41, 182, 246, 0.04), transparent 65%);
+}
+
+.btn-glass-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.btn-glass-icon:hover {
+  background: rgba(41, 182, 246, 0.16);
+  color: var(--tg-cyan);
+  border-color: rgba(41, 182, 246, 0.35);
+}
+
+.btn-sidebar-search-go {
+  background: rgba(41, 182, 246, 0.15);
+  color: var(--tg-cyan);
+  border: 1px solid rgba(41, 182, 246, 0.3);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-sidebar-search-go:hover {
+  background: rgba(41, 182, 246, 0.3);
+  color: #fff;
+}
+
+.tg-sidebar-search-dropdown {
+  background: rgba(11, 17, 28, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tg-sidebar-item-del {
+  opacity: 0;
+  background: transparent;
+  border: none;
+  color: #ff5252;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.tg-sidebar-item:hover .tg-sidebar-item-del {
+  opacity: 0.8;
+}
+
+.tg-sidebar-item-del:hover {
+  opacity: 1;
+  background: rgba(255, 82, 82, 0.2);
+}
+
+.btn-post-fav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-post-fav:hover {
+  background: rgba(255, 215, 0, 0.12);
+  border-color: rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+}
+
+.btn-post-fav.active {
+  background: rgba(255, 215, 0, 0.18);
+  border-color: #ffd700;
+  color: #ffd700;
+}
+

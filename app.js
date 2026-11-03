@@ -15,18 +15,56 @@ let currentPostsData = [];
 let isAscendingOrder = true; // true = TG style (top: older, bottom: newer), false = newest first
 let filterPostText = '';
 
-// Folders State
+// Folders & Favorites State
 let folders = JSON.parse(localStorage.getItem('tg_folders') || 'null');
 if (!folders || !folders.length) {
   folders = [
-    { id: 'all', name: 'Все каналы', icon: '📁', isDefault: true }
+    { id: 'all', name: 'Все каналы', icon: '📁', isDefault: true },
+    { id: 'favorites', name: 'Избранное', icon: '⭐️', isDefault: true }
   ];
+  localStorage.setItem('tg_folders', JSON.stringify(folders));
+}
+if (!folders.some(f => f.id === 'favorites')) {
+  folders.splice(1, 0, { id: 'favorites', name: 'Избранное', icon: '⭐️', isDefault: true });
   localStorage.setItem('tg_folders', JSON.stringify(folders));
 }
 let activeFolderId = 'all';
 let currentSectionTab = 'search'; // 'search' or 'folders'
 let filterInFolderText = '';
 let channelForFolderAssignment = null;
+let savedFavoritePosts = JSON.parse(localStorage.getItem('tg_favorite_posts') || '[]');
+const postsMemoryCache = new Map();
+let activeWorkspaceChannelId = null;
+let sidebarFilterText = '';
+
+// Fast Local & Memory Cache for 0ms channel post loading
+function getCachedPosts(handle) {
+  if (!handle) return null;
+  const h = handle.toLowerCase().replace(/^@/, '');
+  if (postsMemoryCache.has(h)) {
+    return postsMemoryCache.get(h);
+  }
+  try {
+    const raw = localStorage.getItem('tg_posts_cache_' + h);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) {
+        postsMemoryCache.set(h, parsed);
+        return parsed;
+      }
+    }
+  } catch(e) {}
+  return null;
+}
+
+function saveCachedPosts(handle, posts) {
+  if (!handle || !Array.isArray(posts)) return;
+  const h = handle.toLowerCase().replace(/^@/, '');
+  postsMemoryCache.set(h, posts);
+  try {
+    localStorage.setItem('tg_posts_cache_' + h, JSON.stringify(posts.slice(-80)));
+  } catch(e) {}
+}
 
 // Migrate saved channels to ensure folderIds exists
 savedChannels = savedChannels.map(c => {
@@ -329,267 +367,554 @@ function renderCards() {
   cardsList.innerHTML = list.map(c => renderSingleChannelCard(c, false)).join('');
 }
 
-// Render folder tabs & folder view
+// Render folder tabs in Sidebar and Workspace
 function renderFolderTabs() {
-  const container = $('#folderTabsList');
-  if (!container) return;
-
-  container.innerHTML = folders.map(f => {
-    let count = 0;
-    if (f.id === 'all') {
-      count = savedChannels.length;
-    } else {
-      count = savedChannels.filter(c => (c.folderIds || []).includes(f.id)).length;
-    }
-    const countDisplay = (f.source === 'addlist' && count === 0 && f.chatCount) 
-      ? `TG: ${f.chatCount}` 
-      : count;
-
-    return `
-      <div class="folder-pill ${f.id === activeFolderId ? 'active' : ''}" data-folder-id="${esc(f.id)}">
-        <span>${esc(f.icon || '📁')}</span>
-        <span>${esc(f.name)}</span>
-        <span class="folder-pill-count">${esc(countDisplay)}</span>
-      </div>
-    `;
-  }).join('');
-}
-
-function renderFoldersView() {
-  renderFolderTabs();
   updateBadges();
 
-  const folder = folders.find(f => f.id === activeFolderId) || folders[0];
-  const banner = $('#folderActiveBanner');
-  const cardsList = $('#folderCardsList');
-  if (!banner || !cardsList) return;
-
-  // Channels in current folder
-  let list = activeFolderId === 'all' 
-    ? [...savedChannels] 
-    : savedChannels.filter(c => (c.folderIds || []).includes(activeFolderId));
-
-  if (filterInFolderText) {
-    const f = filterInFolderText.toLowerCase();
-    list = list.filter(c => (c.name || '').toLowerCase().includes(f) || (c.handle || '').toLowerCase().includes(f) || (c.description || '').toLowerCase().includes(f));
-  }
-
-  let tgLinkBtn = '';
-  if (folder.url || folder.slug) {
-    const tgUrl = folder.url || `https://t.me/addlist/${folder.slug}`;
-    tgLinkBtn = `
-      <a href="${esc(tgUrl)}" target="_blank" rel="noopener" class="btn-pill" style="color: var(--tg-cyan); border-color: rgba(41, 182, 246, 0.4); background: rgba(41, 182, 246, 0.1);">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-        Открыть папку в TG ↗
-      </a>
-    `;
-  }
-
-  let actionsHtml = `
-    <div class="modal-search-box">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input type="text" id="folderChannelSearchInput" placeholder="Поиск в этой папке..." value="${esc(filterInFolderText)}">
-    </div>
-    ${(folder.source === 'addlist' || folder.slug) ? `
-      <button class="btn-pill" id="btnSyncFolderAddlist" title="Загрузить или обновить каналы из этой Telegram папки">
-        ⚡ Загрузить из TG
-      </button>
-    ` : ''}
-    ${tgLinkBtn}
-  `;
-
-  if (!folder.isDefault) {
-    actionsHtml += `
-      <button class="btn-icon" id="btnRenameFolder" title="Переименовать папку" data-id="${esc(folder.id)}">✏️</button>
-      <button class="btn-icon" id="btnDeleteFolder" title="Удалить папку" data-id="${esc(folder.id)}" style="color: #ff5252;">🗑️</button>
-    `;
-  }
-
-  banner.innerHTML = `
-    <div class="folder-banner-top">
-      <div class="folder-banner-left">
-        <div class="folder-banner-title-row">
-          <span style="font-size: 24px;">${esc(folder.icon || '📁')}</span>
-          <span class="folder-banner-title">${esc(folder.name)}</span>
-          ${folder.source === 'addlist' ? '<span class="channel-cat-pill" style="color:var(--tg-cyan);border-color:rgba(41,182,246,0.3);background:rgba(41,182,246,0.08);">🔗 Telegram Addlist</span>' : ''}
-        </div>
-        <div class="folder-banner-meta">
-          <span>Каналов сохранено: <b>${list.length}</b></span>
-          ${folder.chatCount ? `<span>В Telegram списке: <b>${folder.chatCount} чатов</b></span>` : ''}
-        </div>
-      </div>
-      <div class="folder-banner-actions">
-        ${actionsHtml}
-      </div>
-    </div>
-    <div class="folder-quick-add-bar">
-      <div class="folder-quick-add-input-wrap">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        <input type="text" id="folderQuickAddInput" placeholder="Вставьте @ники каналов через пробел (@YT_cartell @danyavoron_yt)...">
-      </div>
-      <button class="btn-pill primary" id="btnFolderQuickAdd">+ Добавить в папку</button>
-    </div>
-  `;
-
-  const syncBtn = $('#btnSyncFolderAddlist');
-  if (syncBtn) {
-    syncBtn.onclick = () => syncAddlistFolder(folder.id);
-  }
-
-  const quickAddBtn = $('#btnFolderQuickAdd');
-  const quickAddInp = $('#folderQuickAddInput');
-  const handleQuickAdd = () => {
-    if (!quickAddInp) return;
-    const text = quickAddInp.value.trim();
-    if (!text) {
-      notify('Вставьте @ники или ссылки на каналы');
-      return;
-    }
-    const matches = text.match(/(?:https?:\/\/)?(?:www\.)?(?:t\.me\/|@)?([A-Za-z0-9_]{3,32})/gi) || [];
-    const handles = [...new Set(matches.map(m => m.replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, '').replace(/^@/, '').trim()).filter(h => h && !['addlist', 'joinchat', 'c', 's'].includes(h.toLowerCase())))];
-
-    if (!handles.length) {
-      notify('Не найдены корректные имена каналов');
-      return;
-    }
-
-    notify(`Добавляем ${handles.length} каналов...`);
-    handles.forEach(h => {
-      const norm = normalizeChannel({ handle: h, name: h });
-      if (!norm.folderIds) norm.folderIds = ['all'];
-      if (!norm.folderIds.includes(folder.id)) norm.folderIds.push(folder.id);
-
-      catalog.set(norm.id, norm);
-      const existing = savedChannels.find(c => c.id === norm.id);
-      if (existing) {
-        if (!existing.folderIds) existing.folderIds = ['all'];
-        if (!existing.folderIds.includes(folder.id)) existing.folderIds.push(folder.id);
+  const bar = $('#tgSidebarFoldersBar');
+  if (bar) {
+    bar.innerHTML = folders.map(f => {
+      let count = 0;
+      if (f.id === 'all') {
+        count = savedChannels.length;
+      } else if (f.id === 'favorites') {
+        const favChs = savedChannels.filter(c => (c.folderIds || []).includes('favorites')).length;
+        count = favChs + (savedFavoritePosts.length > 0 ? 1 : 0);
       } else {
-        savedChannels.unshift(norm);
+        count = savedChannels.filter(c => (c.folderIds || []).includes(f.id)).length;
       }
-    });
+      const countDisplay = (f.source === 'addlist' && count === 0 && f.chatCount) 
+        ? `TG: ${f.chatCount}` 
+        : count;
 
-    quickAddInp.value = '';
-    saveFolders();
-    renderFoldersView();
-    notify(`✅ Добавлено ${handles.length} каналов в папку «${folder.name}»!`);
-
-    // Fetch details & avatars in background
-    handles.forEach(async (h) => {
-      try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(h)}`);
-        const d = await res.json();
-        if (d.results && d.results.length) {
-          const match = d.results.find(r => (r.handle || '').toLowerCase() === h.toLowerCase()) || d.results[0];
-          if (match) {
-            const ch = savedChannels.find(c => c.id === h.toLowerCase());
-            if (ch) {
-              if (match.name) ch.name = match.name;
-              if (match.avatar) ch.avatar = match.avatar;
-              if (match.memberCount) ch.memberCount = match.memberCount;
-              saveFolders();
-              renderFoldersView();
-            }
-          }
-        }
-      } catch (e) {}
-    });
-  };
-
-  if (quickAddBtn) quickAddBtn.onclick = handleQuickAdd;
-  if (quickAddInp) {
-    quickAddInp.onkeydown = (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleQuickAdd();
-      }
-    };
-  }
-
-  const searchInput = $('#folderChannelSearchInput');
-  if (searchInput) {
-    searchInput.oninput = (e) => {
-      filterInFolderText = e.target.value.trim();
-      renderFoldersView();
-      const inp = $('#folderChannelSearchInput');
-      if (inp) {
-        inp.focus();
-        inp.selectionStart = inp.selectionEnd = inp.value.length;
-      }
-    };
-  }
-
-  const renameBtn = $('#btnRenameFolder');
-  if (renameBtn) {
-    renameBtn.onclick = () => {
-      const newName = prompt('Новое название папки:', folder.name);
-      if (newName && newName.trim() && newName.trim() !== folder.name) {
-        folder.name = newName.trim();
-        saveFolders();
-        renderFoldersView();
-        notify(`Папка переименована в «${folder.name}»`);
-      }
-    };
-  }
-
-  const deleteBtn = $('#btnDeleteFolder');
-  if (deleteBtn) {
-    deleteBtn.onclick = () => {
-      if (confirm(`Удалить папку «${folder.name}»? (Каналы останутся в общем списке)`)) {
-        folders = folders.filter(f => f.id !== folder.id);
-        savedChannels.forEach(c => {
-          c.folderIds = (c.folderIds || []).filter(fid => fid !== folder.id);
-          if (!c.folderIds.length) c.folderIds = ['all'];
-        });
-        activeFolderId = 'all';
-        saveFolders();
-        renderFoldersView();
-        notify('Папка удалена');
-      }
-    };
-  }
-
-  // Auto-clean and auto-sync if addlist folder has stale/random channels or hasn't synced
-  if (folder.source === 'addlist' && (list.some(c => c.id === 'yutub' || c.id === 'grishayoutube') || (!folder._autoSynced && list.length < 5))) {
-    folder._autoSynced = true;
-    setTimeout(() => syncAddlistFolder(folder.id), 100);
-  }
-
-  if (!list.length) {
-    if (folder.source === 'addlist' && !folder._autoSynced) {
-      folder._autoSynced = true;
-      setTimeout(() => syncAddlistFolder(folder.id), 200);
-    }
-
-    cardsList.innerHTML = `
-      <div class="empty-box" style="padding: 40px 0; grid-column: 1 / -1;">
-        <div class="empty-icon">${esc(folder.icon || '📁')}</div>
-        <div style="font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 6px;">В папке «${esc(folder.name)}» пока нет сохранённых каналов</div>
-        <div style="color: var(--text-dim); max-width: 480px; margin: 0 auto 16px;">
-          ${(folder.source === 'addlist' || folder.slug) 
-            ? `Эта папка импортирована по ссылке Telegram (${folder.chatCount ? folder.chatCount + ' чатов' : 'addlist'}). Нажмите кнопку ниже, чтобы автоматически загрузить каналы:` 
-            : 'Вставьте @ники каналов в строку добавления выше или найдите их в каталоге.'}
+      return `
+        <div class="tg-sidebar-folder-pill ${f.id === activeFolderId ? 'active' : ''}" data-sidebar-folder="${esc(f.id)}">
+          <span>${esc(f.icon || '📁')}</span>
+          <span>${esc(f.name)}</span>
+          <span style="font-size:10.5px; opacity:0.85;">(${esc(countDisplay)})</span>
         </div>
-        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-          ${(folder.source === 'addlist' || folder.slug) ? `<button class="btn-pill primary" id="btnSyncEmptyFolder">⚡ Загрузить каналы из Telegram папки</button>` : ''}
-          <button class="btn-pill" id="btnGoSearchFromFolder">🔍 Найти каналы в каталоге</button>
-          ${folder.url ? `<a href="${esc(folder.url)}" target="_blank" rel="noopener" class="btn-pill">Открыть в Telegram ↗</a>` : ''}
+      `;
+    }).join('');
+
+    $$('#tgSidebarFoldersBar .tg-sidebar-folder-pill').forEach(pill => {
+      pill.onclick = (e) => {
+        e.stopPropagation();
+        activeFolderId = pill.dataset.sidebarFolder;
+        renderFoldersView();
+      };
+    });
+  }
+
+  const modalBar = $('#modalSidebarFoldersBar');
+  if (modalBar) {
+    modalBar.innerHTML = folders.map(f => {
+      let count = f.id === 'all' 
+        ? savedChannels.length 
+        : (f.id === 'favorites' 
+            ? savedChannels.filter(c => (c.folderIds || []).includes('favorites')).length
+            : savedChannels.filter(c => (c.folderIds || []).includes(f.id)).length);
+      return `
+        <div class="tg-sidebar-folder-pill ${f.id === activeFolderId ? 'active' : ''}" data-sidebar-folder="${esc(f.id)}">
+          <span>${esc(f.icon || '📁')}</span>
+          <span>${esc(f.name)}</span>
+          <span style="font-size:10.5px; opacity:0.85;">(${count})</span>
+        </div>
+      `;
+    }).join('');
+    $$('#modalSidebarFoldersBar .tg-sidebar-folder-pill').forEach(pill => {
+      pill.onclick = (e) => {
+        e.stopPropagation();
+        activeFolderId = pill.dataset.sidebarFolder;
+        renderModalSidebar();
+        renderFoldersView();
+      };
+    });
+  }
+}
+
+// Telegram Workspace Main View: Folders & Sidebar & Active Feed
+function renderFoldersView() {
+  renderFolderTabs();
+
+  const channelListEl = $('#tgSidebarChannelList');
+  if (!channelListEl) return;
+
+  // 1. Filter channels for active folder
+  let channels = [];
+  if (activeFolderId === 'all') {
+    channels = [...savedChannels];
+  } else if (activeFolderId === 'favorites') {
+    channels = savedChannels.filter(c => (c.folderIds || []).includes('favorites'));
+  } else {
+    channels = savedChannels.filter(c => (c.folderIds || []).includes(activeFolderId));
+  }
+
+  // 2. Filter by search input
+  if (sidebarFilterText) {
+    const q = sidebarFilterText.toLowerCase();
+    channels = channels.filter(c => 
+      (c.name || '').toLowerCase().includes(q) || 
+      (c.handle || '').toLowerCase().includes(q) ||
+      (c.cleanHandle || '').toLowerCase().includes(q) ||
+      (c.description || '').toLowerCase().includes(q)
+    );
+  }
+
+  let itemsHtml = '';
+
+  // ⭐️ Избранное (Сохранённые сообщения) item at top if in favorites folder
+  if (activeFolderId === 'favorites') {
+    const isSavedSelected = activeWorkspaceChannelId === 'saved_messages';
+    itemsHtml += `
+      <div class="tg-sidebar-item ${isSavedSelected ? 'active' : ''}" data-sidebar-ch-id="saved_messages">
+        <div class="tg-sidebar-item-avatar" style="background:rgba(255,215,0,0.18); color:#ffd700; font-size:18px;">
+          ⭐️
+        </div>
+        <div class="tg-sidebar-item-info">
+          <div class="tg-sidebar-item-name">⭐️ Сохранённые сообщения</div>
+          <div class="tg-sidebar-item-meta">${savedFavoritePosts.length} сохранённых постов</div>
         </div>
       </div>
     `;
+  }
 
-    const emptySyncBtn = $('#btnSyncEmptyFolder');
-    if (emptySyncBtn) {
-      emptySyncBtn.onclick = () => syncAddlistFolder(folder.id);
+  if (!channels.length && activeFolderId !== 'favorites') {
+    itemsHtml += `
+      <div style="padding: 32px 16px; text-align: center; color: var(--text-dim); font-size: 13px;">
+        <div style="font-size: 26px; margin-bottom: 8px;">📭</div>
+        <div>В этой папке пока нет каналов</div>
+        <div style="font-size: 11.5px; margin-top: 6px; color: var(--text-muted);">
+          Найдите канал в поиске выше или введите @ник
+        </div>
+      </div>
+    `;
+  } else {
+    channels.forEach(c => {
+      const initial = (c.name || c.cleanHandle || '?')[0].toUpperCase();
+      const avatarHtml = c.avatar 
+        ? `<img src="${esc(c.avatar)}" alt="" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">` 
+        : initial;
+      const isActive = c.id === activeWorkspaceChannelId;
+
+      itemsHtml += `
+        <div class="tg-sidebar-item ${isActive ? 'active' : ''}" data-sidebar-ch-id="${esc(c.id)}">
+          <div class="tg-sidebar-item-avatar">
+            ${avatarHtml}
+          </div>
+          <div class="tg-sidebar-item-info">
+            <div class="tg-sidebar-item-name">${esc(c.name)}</div>
+            <div class="tg-sidebar-item-meta">${esc(c.handle)} ${c.count != null ? '• ' + formatSubs(c.count) : ''}</div>
+          </div>
+          <button class="tg-sidebar-item-del" data-del-ch-id="${esc(c.id)}" title="Удалить из этой папки">&times;</button>
+        </div>
+      `;
+    });
+  }
+
+  channelListEl.innerHTML = itemsHtml;
+
+  // Bind clicks
+  $$('#tgSidebarChannelList .tg-sidebar-item').forEach(el => {
+    el.onclick = (e) => {
+      const delBtn = e.target.closest('[data-del-ch-id]');
+      if (delBtn) {
+        e.stopPropagation();
+        removeChannelFromFolder(delBtn.dataset.delChId, activeFolderId);
+        return;
+      }
+      openChannelInWorkspace(el.dataset.sidebarChId);
+    };
+  });
+
+  // Auto-select channel
+  const validIds = new Set(channels.map(c => c.id));
+  if (activeFolderId === 'favorites') validIds.add('saved_messages');
+
+  if (!activeWorkspaceChannelId || !validIds.has(activeWorkspaceChannelId)) {
+    if (activeFolderId === 'favorites') {
+      activeWorkspaceChannelId = channels.length ? channels[0].id : 'saved_messages';
+      openChannelInWorkspace(activeWorkspaceChannelId);
+    } else if (channels.length) {
+      activeWorkspaceChannelId = channels[0].id;
+      openChannelInWorkspace(activeWorkspaceChannelId);
+    } else {
+      activeWorkspaceChannelId = null;
+      if ($('#tgChatPlaceholder')) $('#tgChatPlaceholder').style.display = 'flex';
+      if ($('#tgChatHeader')) $('#tgChatHeader').style.display = 'none';
+      if ($('#tgChatDesc')) $('#tgChatDesc').style.display = 'none';
+      if ($('#tgAppPostsContainer')) $('#tgAppPostsContainer').style.display = 'none';
     }
-    const goBtn = $('#btnGoSearchFromFolder');
-    if (goBtn) {
-      goBtn.onclick = () => switchSection('search');
-    }
+  }
+}
+
+function removeChannelFromFolder(chId, folderId) {
+  const channel = savedChannels.find(c => c.id === chId);
+  if (!channel) return;
+
+  if (folderId === 'all') {
+    savedChannels = savedChannels.filter(c => c.id !== chId);
+    notify(`Канал ${channel.handle} удален`);
+  } else {
+    channel.folderIds = (channel.folderIds || []).filter(fid => fid !== folderId);
+    if (!channel.folderIds.length) channel.folderIds = ['all'];
+    notify(`Канал ${channel.handle} удален из папки`);
+  }
+
+  saveFolders();
+  renderFoldersView();
+}
+
+// Open Channel directly inside Telegram Workspace
+async function openChannelInWorkspace(channelId, autoScroll = true) {
+  activeWorkspaceChannelId = channelId;
+
+  $$('#tgSidebarChannelList .tg-sidebar-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.sidebarChId === channelId);
+  });
+
+  const placeholder = $('#tgChatPlaceholder');
+  const header = $('#tgChatHeader');
+  const container = $('#tgAppPostsContainer');
+  const descEl = $('#tgChatDesc');
+  const favBtn = $('#btnTgToggleFavorite');
+  const assignBtn = $('#btnTgAssignFolder');
+  const refreshBtn = $('#btnTgRefreshPosts');
+  const openTgBtn = $('#btnTgOpenTelegram');
+
+  if (channelId === 'saved_messages') {
+    currentChannelData = { id: 'saved_messages', name: 'Сохранённые сообщения', cleanHandle: '', handle: '@saved' };
+    currentPostsData = [...savedFavoritePosts];
+    if (placeholder) placeholder.style.display = 'none';
+    if (header) header.style.display = 'flex';
+    if (container) container.style.display = 'block';
+    if (descEl) descEl.style.display = 'none';
+    if (favBtn) favBtn.style.display = 'none';
+    if (assignBtn) assignBtn.style.display = 'none';
+    if (refreshBtn) refreshBtn.style.display = 'none';
+    if (openTgBtn) openTgBtn.style.display = 'none';
+
+    $('#tgChatHeadInfo').innerHTML = `
+      <div class="tg-chat-head-avatar" style="background:rgba(255,215,0,0.18); color:#ffd700; font-size:20px;">⭐️</div>
+      <div>
+        <div class="tg-chat-head-title">⭐️ Сохранённые сообщения</div>
+        <div class="tg-chat-head-subs">${savedFavoritePosts.length} сохранённых сообщений</div>
+      </div>
+    `;
+
+    renderWorkspacePosts(false);
     return;
   }
 
-  cardsList.innerHTML = list.map(c => renderSingleChannelCard(c, true)).join('');
+  const channel = catalog.get(channelId) || savedChannels.find(c => c.id === channelId);
+  if (!channel) return;
+
+  currentChannelData = channel;
+  if (placeholder) placeholder.style.display = 'none';
+  if (header) header.style.display = 'flex';
+  if (container) container.style.display = 'block';
+  if (favBtn) favBtn.style.display = 'inline-flex';
+  if (assignBtn) assignBtn.style.display = 'inline-flex';
+  if (refreshBtn) refreshBtn.style.display = 'inline-flex';
+  if (openTgBtn) {
+    openTgBtn.style.display = 'inline-flex';
+    openTgBtn.href = channel.url || `https://t.me/${channel.cleanHandle}`;
+  }
+
+  // Update Favorite button
+  const isChannelFav = channel.folderIds && channel.folderIds.includes('favorites');
+  $('#favStarIcon').textContent = isChannelFav ? '★' : '⭐️';
+  $('#favStarText').textContent = isChannelFav ? 'В избранном' : 'В избранное';
+  favBtn.classList.toggle('active', !!isChannelFav);
+
+  // Update header info
+  const initial = (channel.name || channel.cleanHandle || '?')[0].toUpperCase();
+  const avatarHtml = channel.avatar 
+    ? `<img src="${esc(channel.avatar)}" alt="" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">` 
+    : initial;
+  $('#tgChatHeadInfo').innerHTML = `
+    <div class="tg-chat-head-avatar">${avatarHtml}</div>
+    <div style="min-width:0;">
+      <div class="tg-chat-head-title">${esc(channel.name)}</div>
+      <div class="tg-chat-head-subs">${esc(channel.handle)} ${channel.count != null ? '• ' + formatSubs(channel.count) + ' подписчиков' : ''}</div>
+    </div>
+  `;
+
+  if (channel.description) {
+    descEl.textContent = channel.description;
+    descEl.style.display = 'block';
+  } else {
+    descEl.style.display = 'none';
+  }
+
+  // 1. INSTANT 0ms Cache Display!
+  const cached = getCachedPosts(channel.cleanHandle);
+  if (cached && cached.length) {
+    currentPostsData = cached;
+    renderWorkspacePosts(false);
+    if (autoScroll) {
+      setTimeout(() => {
+        if (container) container.scrollTop = isAscendingOrder ? container.scrollHeight : 0;
+      }, 30);
+    }
+  } else {
+    currentPostsData = [];
+    container.innerHTML = `
+      <div class="empty-box" style="padding: 60px 0;">
+        <div class="empty-icon">⏳</div>
+        <div>Загружаем сообщения канала @${esc(channel.cleanHandle)}...</div>
+      </div>
+    `;
+  }
+
+  // 2. Background Fresh Fetch (Merges newest posts without losing any existing ones)
+  try {
+    const res = await fetch(`/api/posts?handle=${encodeURIComponent(channel.cleanHandle)}&all=1`);
+    const data = await res.json();
+
+    if (!currentChannelData || currentChannelData.cleanHandle !== channel.cleanHandle) return;
+
+    if (data.channel) {
+      if (data.channel.avatar && data.channel.avatar !== channel.avatar) {
+        channel.avatar = data.channel.avatar;
+        updateChannelAvatarInDom(channel.cleanHandle, data.channel.avatar);
+      }
+      if (data.channel.name && (!channel.name || channel.name === channel.cleanHandle)) {
+        channel.name = data.channel.name;
+        const titleEl = $('#tgChatHeadInfo .tg-chat-head-title');
+        if (titleEl) titleEl.textContent = channel.name;
+      }
+      saveFolders();
+    }
+
+    if (data.posts && data.posts.length) {
+      const existingIds = new Set(currentPostsData.map(p => String(p.id)));
+      let added = 0;
+      data.posts.forEach(p => {
+        if (!existingIds.has(String(p.id))) {
+          currentPostsData.push(p);
+          added++;
+        }
+      });
+
+      saveCachedPosts(channel.cleanHandle, currentPostsData);
+      renderWorkspacePosts(false);
+
+      if (added > 0 && autoScroll) {
+        setTimeout(() => {
+          if (container && isAscendingOrder) container.scrollTop = container.scrollHeight;
+        }, 50);
+      }
+    } else if (!currentPostsData.length) {
+      container.innerHTML = `
+        <div class="empty-box" style="padding: 60px 0;">
+          <div class="empty-icon">📭</div>
+          <div>Лента сообщений канала пуста или является приватной.</div>
+        </div>
+      `;
+    }
+  } catch (err) {
+    console.warn('Background posts fetch failed:', err);
+    if (!currentPostsData.length) {
+      container.innerHTML = `
+        <div class="empty-box" style="padding: 60px 0;">
+          <div class="empty-icon">⚠️</div>
+          <div>Не удалось загрузить сообщения: ${esc(err.message)}</div>
+        </div>
+      `;
+    }
+  }
+}
+
+// Render Posts Feed in Workspace
+function renderWorkspacePosts(isFilterOnly = false) {
+  const container = $('#tgAppPostsContainer');
+  if (!container) return;
+
+  let list = [...currentPostsData];
+  const query = ($('#tgChatSearchPosts')?.value || '').trim().toLowerCase();
+  if (query) {
+    list = list.filter(p => (p.text || '').toLowerCase().includes(query) || String(p.id).includes(query));
+  }
+
+  list.sort((a, b) => {
+    const numA = parseInt(a.id, 10) || 0;
+    const numB = parseInt(b.id, 10) || 0;
+    return isAscendingOrder ? (numA - numB) : (numB - numA);
+  });
+
+  if (!list.length) {
+    container.innerHTML = `
+      <div class="empty-box" style="padding: 60px 0;">
+        <div class="empty-icon">🔍</div>
+        <div>${query ? `По запросу «${esc(query)}» ничего не найдено` : 'Нет сообщений для отображения'}</div>
+      </div>
+    `;
+    return;
+  }
+
+  const paginationButtonHtml = `
+    <div class="load-older-wrap" style="text-align: center; padding: 20px 0;">
+      <button id="btnTgAppLoadOlder" class="btn-pill primary" style="margin: 0 auto; padding: 10px 24px; font-weight: 700; cursor: pointer;">
+        📥 Загрузить более ранние сообщения
+      </button>
+    </div>
+  `;
+
+  let htmlOutput = isAscendingOrder ? paginationButtonHtml : '';
+  let lastDatePill = '';
+
+  const authorInitial = (currentChannelData?.name || currentChannelData?.cleanHandle || '?')[0].toUpperCase();
+  const authorAvatarImg = currentChannelData?.avatar 
+    ? `<img src="${esc(currentChannelData.avatar)}" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerText='${authorInitial}';">`
+    : authorInitial;
+
+  const isSavedMessagesView = currentChannelData?.id === 'saved_messages';
+
+  list.forEach(p => {
+    const dateLabel = p.dateOnly || (p.date ? p.date.split(',')[0].trim() : '');
+    if (dateLabel && dateLabel !== lastDatePill) {
+      lastDatePill = dateLabel;
+      htmlOutput += `<div class="chat-date-divider"><span>${esc(dateLabel)}</span></div>`;
+    }
+
+    const postAuthorName = isSavedMessagesView ? (p.channelName || 'Канал') : (currentChannelData?.name || 'Канал');
+    const postAuthorAvatar = (isSavedMessagesView && p.channelAvatar) 
+      ? `<img src="${esc(p.channelAvatar)}" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerText='${(p.channelName || '?')[0].toUpperCase()}';">`
+      : authorAvatarImg;
+
+    const formattedBody = formatPostHtml(p.text, isSavedMessagesView ? p.channelHandle : (currentChannelData ? currentChannelData.cleanHandle : ''), p.isMediaNote);
+
+    const validImages = (p.images || []).filter(img => {
+      if (!img) return false;
+      const lower = img.toLowerCase();
+      return !lower.includes('reaction') && !lower.includes('emoji') && !lower.includes('thumb_reaction');
+    });
+
+    let mediaHtml = '';
+    if (validImages.length) {
+      mediaHtml = `
+        <div class="post-media-grid">
+          ${validImages.map(img => `<img src="${esc(img)}" alt="" loading="lazy" onclick="window.open('${esc(img)}', '_blank')">`).join('')}
+        </div>
+      `;
+    }
+
+    let noteBadge = '';
+    if (p.isMediaNote && !p.text) {
+      noteBadge = `
+        <div class="media-note-banner">
+          <span class="media-note-icon">📹</span>
+          <div class="media-note-info">
+            <strong>Видеосообщение (кружочек) / Голосовое</strong>
+            <small>Смотрите запись в Telegram ↗</small>
+          </div>
+        </div>
+      `;
+    }
+
+    const isFav = savedFavoritePosts.some(fp => String(fp.id) === String(p.id) && fp.channelHandle === (isSavedMessagesView ? p.channelHandle : currentChannelData?.cleanHandle));
+
+    htmlOutput += `
+      <div class="post-bubble" id="post-bubble-${esc(p.id)}">
+        <div class="post-bubble-header">
+          <div class="post-author-row">
+            <div class="post-author-avatar">
+              ${postAuthorAvatar}
+            </div>
+            <span class="post-author-name">${esc(postAuthorName)}</span>
+            <span class="post-id-badge">#${esc(p.id)}</span>
+          </div>
+          <div class="post-bubble-meta">
+            <span class="post-date-tag">📅 ${esc(p.date || 'Недавно')}</span>
+            ${p.views ? `<span>👁 ${esc(p.views)}</span>` : ''}
+          </div>
+        </div>
+
+        ${mediaHtml}
+        ${noteBadge}
+
+        <div class="post-bubble-text">${formattedBody}</div>
+
+        <div class="post-bubble-footer">
+          <div class="post-bubble-footer-left">
+            <a href="${esc(p.url || '#')}" target="_blank" rel="noopener" style="color: var(--tg-cyan); text-decoration: none; font-weight: 600;">
+              В Telegram ↗
+            </a>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn-post-fav ${isFav ? 'active' : ''}" data-post-fav-id="${esc(p.id)}" title="${isFav ? 'Удалить из Избранного' : 'Сохранить в Избранное'}">
+              ${isFav ? '★ В избранном' : '⭐️ Сохранить'}
+            </button>
+            <button class="btn-post-copy" data-copy-post="${esc(p.text || '')}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Копировать
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  if (!isAscendingOrder) {
+    htmlOutput += paginationButtonHtml;
+  }
+
+  container.innerHTML = htmlOutput;
+
+  const olderBtn = $('#btnTgAppLoadOlder');
+  if (olderBtn) olderBtn.onclick = loadOlderPosts;
+}
+
+// Toggle Bookmarking of an Individual Post (Saved Messages)
+function toggleBookmarkPost(postId) {
+  const post = currentPostsData.find(p => String(p.id) === String(postId));
+  if (!post) return;
+
+  const handle = currentChannelData?.cleanHandle || '';
+  const existingIdx = savedFavoritePosts.findIndex(fp => String(fp.id) === String(postId) && fp.channelHandle === handle);
+  if (existingIdx >= 0) {
+    savedFavoritePosts.splice(existingIdx, 1);
+    notify(`Сообщение #${postId} удалено из Избранного`);
+  } else {
+    savedFavoritePosts.unshift({
+      ...post,
+      channelId: currentChannelData?.id,
+      channelHandle: handle,
+      channelName: currentChannelData?.name || 'Канал',
+      channelAvatar: currentChannelData?.avatar || null,
+      savedAt: new Date().toISOString()
+    });
+    notify(`⭐️ Сообщение #${postId} сохранено в Избранное!`);
+  }
+  localStorage.setItem('tg_favorite_posts', JSON.stringify(savedFavoritePosts));
+  renderWorkspacePosts(true);
+  renderFolderTabs();
+}
+
+// Toggle Channel in Favorites Folder
+function toggleChannelFavorite() {
+  if (!currentChannelData || currentChannelData.id === 'saved_messages') return;
+  if (!currentChannelData.folderIds) currentChannelData.folderIds = ['all'];
+
+  const hasFav = currentChannelData.folderIds.includes('favorites');
+  if (hasFav) {
+    currentChannelData.folderIds = currentChannelData.folderIds.filter(fid => fid !== 'favorites');
+    notify(`Канал @${currentChannelData.cleanHandle} удален из Избранного`);
+  } else {
+    currentChannelData.folderIds.push('favorites');
+    notify(`⭐️ Канал @${currentChannelData.cleanHandle} добавлен в Избранное!`);
+  }
+
+  const existing = savedChannels.find(c => c.id === currentChannelData.id);
+  if (existing) {
+    existing.folderIds = currentChannelData.folderIds;
+  } else {
+    savedChannels.unshift(currentChannelData);
+  }
+
+  saveFolders();
+  renderFoldersView();
+  openChannelInWorkspace(currentChannelData.id, false);
 }
 
 // Assign Channel to Folders Modal
@@ -955,8 +1280,6 @@ function updateChannelAvatarInDom(cleanHandle, avatarUrl) {
 }
 
 // Telegram Sidebar in Channel View
-let sidebarFilterText = '';
-
 function renderModalSidebar() {
   const foldersBar = $('#modalSidebarFoldersBar');
   const channelList = $('#modalSidebarChannelList');
@@ -1447,6 +1770,109 @@ function closeModal() {
 }
 
 // Event Listeners Setup
+
+// Sidebar Global Channel Search & Direct Subscribe
+async function executeSidebarSearch() {
+  const input = $('#tgSidebarSearchInput');
+  const dropdown = $('#tgSidebarSearchResults');
+  if (!input || !dropdown) return;
+
+  const q = input.value.trim();
+  if (!q) {
+    dropdown.style.display = 'none';
+    return;
+  }
+
+  if (/addlist\//i.test(q) || /t\.me\/addlist/i.test(q)) {
+    dropdown.style.display = 'none';
+    await importTelegramAddlist(q);
+    return;
+  }
+
+  dropdown.style.display = 'flex';
+  dropdown.innerHTML = `
+    <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 12px;">
+      ⏳ Поиск «${esc(q)}» в Telegram...
+    </div>
+  `;
+
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    const results = (data.results || []).slice(0, 6);
+
+    if (!results.length) {
+      const cleanH = q.replace(/^@/, '').replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, '').trim();
+      dropdown.innerHTML = `
+        <div style="padding: 8px 10px; font-size: 12px; color: var(--text-dim); text-align: center;">
+          Канал не найден в базе.
+          <button class="btn-pill primary" id="btnSidebarDirectAdd" style="margin-top: 6px; width: 100%; justify-content: center; font-size: 11.5px;">
+            ⚡ Проверить @${esc(cleanH)}
+          </button>
+        </div>
+      `;
+      const directBtn = $('#btnSidebarDirectAdd');
+      if (directBtn) {
+        directBtn.onclick = async () => {
+          dropdown.style.display = 'none';
+          input.value = '';
+          await fetchSingleChannel(cleanH);
+        };
+      }
+      return;
+    }
+
+    dropdown.innerHTML = results.map(r => {
+      const initial = (r.name || r.cleanHandle || '?')[0].toUpperCase();
+      const avHtml = r.avatar 
+        ? `<img src="${esc(r.avatar)}" style="width:100%;height:100%;object-fit:cover;">` 
+        : initial;
+
+      return `
+        <div class="sidebar-search-item" style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.03);gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+            <div style="width:28px;height:28px;border-radius:50%;overflow:hidden;background:#242f3d;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">
+              ${avHtml}
+            </div>
+            <div style="min-width:0;">
+              <div style="font-size:12px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:115px;">${esc(r.name || r.handle)}</div>
+              <div style="font-size:10.5px;color:var(--text-dim);">${esc(r.handle)} ${r.count != null ? '• ' + formatSubs(r.count) : ''}</div>
+            </div>
+          </div>
+          <button class="btn-pill primary btn-quick-sub" data-sub-handle="${esc(r.cleanHandle || r.handle)}" style="padding:3px 7px;font-size:11px;white-space:nowrap;">
+            + Добавить
+          </button>
+        </div>
+      `;
+    }).join('');
+
+    $$('.btn-quick-sub').forEach(b => {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        const handle = b.dataset.subHandle;
+        const norm = normalizeChannel({ handle, name: handle });
+        if (!norm.folderIds) norm.folderIds = ['all'];
+        if (activeFolderId && activeFolderId !== 'all') {
+          if (!norm.folderIds.includes(activeFolderId)) norm.folderIds.push(activeFolderId);
+        }
+        catalog.set(norm.id, norm);
+        if (!savedChannels.some(c => c.id === norm.id)) {
+          savedChannels.unshift(norm);
+        }
+        saveFolders();
+        dropdown.style.display = 'none';
+        input.value = '';
+        sidebarFilterText = '';
+        renderFoldersView();
+        openChannelInWorkspace(norm.id);
+        notify(`✅ Канал @${norm.cleanHandle} добавлен!`);
+      };
+    });
+  } catch (err) {
+    dropdown.innerHTML = `<div style="padding:8px;font-size:12px;color:#ff5252;text-align:center;">Ошибка поиска: ${esc(err.message)}</div>`;
+  }
+}
+
 function initEvents() {
   $('#searchBtn').onclick = () => performSearch();
   $('#searchInput').addEventListener('keydown', e => {
@@ -1511,7 +1937,15 @@ function initEvents() {
 
     const card = e.target.closest('[data-channel-id]');
     if (card) {
-      openChannelModal(card.dataset.channelId);
+      const chId = card.dataset.channelId;
+      const ch = catalog.get(chId);
+      if (ch && !isSaved(ch.id)) {
+        ch.folderIds = ['all'];
+        savedChannels.unshift(ch);
+        saveFolders();
+      }
+      switchSection('folders');
+      openChannelInWorkspace(chId);
     }
   };
 
@@ -1649,6 +2083,150 @@ function initEvents() {
       if ($('#assignFolderModal').classList.contains('open')) closeAssignModal();
     }
   });
+
+  
+  // --- Telegram Workspace Event Listeners ---
+  // Sidebar Search
+  const sbSearchInput = $('#tgSidebarSearchInput');
+  if (sbSearchInput) {
+    sbSearchInput.addEventListener('input', e => {
+      sidebarFilterText = e.target.value.trim();
+      if (!sidebarFilterText && $('#tgSidebarSearchResults')) {
+        $('#tgSidebarSearchResults').style.display = 'none';
+      }
+      renderFoldersView();
+    });
+    sbSearchInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        executeSidebarSearch();
+      }
+    });
+  }
+
+  if ($('#btnSidebarSearchGo')) {
+    $('#btnSidebarSearchGo').onclick = executeSidebarSearch;
+  }
+
+  // Sidebar header actions
+  if ($('#btnSidebarAddlist')) $('#btnSidebarAddlist').onclick = openAddlist;
+  if ($('#btnSidebarNewFolder')) $('#btnSidebarNewFolder').onclick = openNewFolder;
+
+  // Sidebar toggle
+  if ($('#btnTgSidebarToggleApp')) {
+    $('#btnTgSidebarToggleApp').onclick = () => {
+      $('#appTgSidebar')?.classList.toggle('collapsed');
+    };
+  }
+
+  // Workspace Chat Header Actions
+  if ($('#tgChatSearchPosts')) {
+    $('#tgChatSearchPosts').addEventListener('input', () => {
+      renderWorkspacePosts(true);
+    });
+  }
+
+  if ($('#btnTgToggleFavorite')) {
+    $('#btnTgToggleFavorite').onclick = toggleChannelFavorite;
+  }
+
+  if ($('#btnTgAssignFolder')) {
+    $('#btnTgAssignFolder').onclick = () => {
+      if (currentChannelData && currentChannelData.id !== 'saved_messages') {
+        openAssignFolderModal(currentChannelData.id);
+      }
+    };
+  }
+
+  if ($('#btnTgRefreshPosts')) {
+    $('#btnTgRefreshPosts').onclick = refreshChannelPosts;
+  }
+
+  if ($('#btnTgOrderToggle')) {
+    $('#btnTgOrderToggle').onclick = () => {
+      isAscendingOrder = !isAscendingOrder;
+      const label = isAscendingOrder ? '⬆ Снизу новые' : '⬇ Сверху новые';
+      const tgLabel = isAscendingOrder ? '⬆ Снизу новые (как в TG)' : '⬇ Сверху новые';
+      if ($('#appOrderToggleText')) $('#appOrderToggleText').textContent = label;
+      if ($('#orderToggleText')) $('#orderToggleText').textContent = tgLabel;
+      renderWorkspacePosts(false);
+      setTimeout(() => {
+        const c = $('#tgAppPostsContainer');
+        if (c) c.scrollTop = isAscendingOrder ? c.scrollHeight : 0;
+      }, 40);
+    };
+  }
+
+  if ($('#btnTgCopyAll')) {
+    $('#btnTgCopyAll').onclick = copyAllPosts;
+  }
+
+  // Workspace scroll to bottom
+  const appPostsBox = $('#tgAppPostsContainer');
+  if (appPostsBox) {
+    appPostsBox.addEventListener('scroll', () => {
+      const diff = appPostsBox.scrollHeight - appPostsBox.scrollTop - appPostsBox.clientHeight;
+      $('#btnTgAppScrollBottom')?.classList.toggle('show', diff > 240);
+    });
+  }
+
+  if ($('#btnTgAppScrollBottom') && appPostsBox) {
+    $('#btnTgAppScrollBottom').onclick = () => {
+      appPostsBox.scrollTo({ top: appPostsBox.scrollHeight, behavior: 'smooth' });
+    };
+  }
+
+  // Workspace post clicks (bookmarking, copy, in-app links)
+  if (appPostsBox) {
+    appPostsBox.onclick = e => {
+      // 1. Post Bookmark Button (Save to Favorites)
+      const favBtn = e.target.closest('[data-post-fav-id]');
+      if (favBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleBookmarkPost(favBtn.dataset.postFavId);
+        return;
+      }
+
+      // 2. Copy post text
+      const copyBtn = e.target.closest('[data-copy-post]');
+      if (copyBtn) {
+        e.preventDefault();
+        copyToClipboard(copyBtn.dataset.copyPost, 'Текст сообщения скопирован!');
+        copyBtn.classList.add('copied');
+        setTimeout(() => copyBtn.classList.remove('copied'), 1500);
+        return;
+      }
+
+      // 3. In-app jump to post
+      const jumpBtn = e.target.closest('.tg-inapp-jump');
+      if (jumpBtn) {
+        e.preventDefault();
+        const pid = jumpBtn.dataset.jumpPost;
+        const targetBubble = document.getElementById(`post-bubble-${pid}`);
+        if (targetBubble) {
+          targetBubble.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          targetBubble.classList.remove('highlighted');
+          void targetBubble.offsetWidth;
+          targetBubble.classList.add('highlighted');
+          notify(`Переход к сообщению #${pid}`);
+        } else {
+          jumpToPost(pid);
+        }
+        return;
+      }
+
+      // 4. In-app open channel
+      const chBtn = e.target.closest('.tg-inapp-channel');
+      if (chBtn) {
+        e.preventDefault();
+        const targetCh = chBtn.dataset.openChannel;
+        if (targetCh) {
+          fetchSingleChannel(targetCh);
+        }
+        return;
+      }
+    };
+  }
 
   // Refresh posts button
   const refreshBtn = $('#modalRefreshPosts');

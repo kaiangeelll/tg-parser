@@ -151,47 +151,128 @@
       </main>
     </div>
 
-    <!-- VIEW 2: MY CHANNELS & FOLDERS (Полный раздел каналов и папок) -->
+    <!-- VIEW 2: MY CHANNELS & FOLDERS (Полноценный Telegram Мессенджер) -->
     <div id="viewFolders" class="app-view">
-      <div class="folders-page-header">
-        <div>
-          <h2 class="folders-page-title">Мои каналы и папки</h2>
-          <p class="folders-page-subtitle">Организуй каналы по папкам или подключи готовую подборку ссылкой <code>t.me/addlist/...</code></p>
+      <div class="tg-workspace-container">
+        <div class="tg-split-view liquid-glass-container">
+          <!-- LEFT SIDEBAR: Telegram Folders & Channel List -->
+          <aside class="tg-sidebar" id="appTgSidebar">
+            <!-- Sidebar Header & Search/Add Bar -->
+            <div class="tg-sidebar-top">
+              <div class="tg-sidebar-brand-row">
+                <div class="tg-sidebar-brand">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="color:var(--tg-blue);"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .37z"/></svg>
+                  <span>Telegram</span>
+                </div>
+                <div class="tg-sidebar-top-actions">
+                  <button class="btn-glass-icon" id="btnSidebarAddlist" title="Импорт папки t.me/addlist">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  </button>
+                  <button class="btn-glass-icon" id="btnSidebarNewFolder" title="Создать папку">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Search in Folder & Global Channel Finder -->
+              <div class="tg-sidebar-search-box">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="text" id="tgSidebarSearchInput" placeholder="Поиск или @ник канала..." autocomplete="off">
+                <button class="btn-sidebar-search-go" id="btnSidebarSearchGo" title="Найти канал">Найти</button>
+              </div>
+
+              <!-- Instant search results dropdown in sidebar -->
+              <div class="tg-sidebar-search-dropdown" id="tgSidebarSearchResults" style="display:none;"></div>
+            </div>
+
+            <!-- Folder Tabs (Все, Избранное, Ютуб⭐️⭐️, etc.) -->
+            <div class="tg-sidebar-folders-bar" id="tgSidebarFoldersBar">
+              <!-- Rendered dynamically -->
+            </div>
+
+            <!-- Channel List in Sidebar -->
+            <div class="tg-sidebar-channel-list" id="tgSidebarChannelList">
+              <!-- Rendered dynamically -->
+            </div>
+          </aside>
+
+          <!-- RIGHT MAIN CHAT AREA -->
+          <main class="tg-chat-main" id="appTgChatMain">
+            <!-- If no channel selected -->
+            <div class="tg-chat-placeholder" id="tgChatPlaceholder" style="display:none;">
+              <div class="empty-icon">💬</div>
+              <div style="font-size:18px; font-weight:700; color:#fff; margin-bottom:8px;">Выберите канал для чтения</div>
+              <div style="color:var(--text-dim); max-width:320px; text-align:center;">Выберите канал из списка слева или введите @ник в строку поиска</div>
+            </div>
+
+            <!-- Chat view header -->
+            <div class="tg-chat-header" id="tgChatHeader">
+              <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+                <button class="btn-icon btn-toggle-sidebar" id="btnTgSidebarToggleApp" title="Список каналов">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <div class="tg-chat-head-info" id="tgChatHeadInfo">
+                  <!-- Avatar, Title, Subs loaded dynamically -->
+                </div>
+              </div>
+
+              <div class="tg-chat-header-actions">
+                <!-- Search within channel posts -->
+                <div class="modal-search-box">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  <input type="text" id="tgChatSearchPosts" placeholder="Поиск в сообщениях..." autocomplete="off">
+                </div>
+
+                <!-- Add to Favorites button (⭐️ Избранное) -->
+                <button class="btn-pill" id="btnTgToggleFavorite" title="Добавить/убрать канал из избранного">
+                  <span id="favStarIcon">⭐️</span>
+                  <span id="favStarText">В избранное</span>
+                </button>
+
+                <!-- Assign Folders -->
+                <button class="btn-pill" id="btnTgAssignFolder" title="Папки канала">
+                  📁 Папки
+                </button>
+
+                <!-- Refresh button -->
+                <button class="btn-pill" id="btnTgRefreshPosts" title="Обновить самые свежие посты">
+                  <svg id="appRefreshIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+                  <span id="appRefreshBtnText">Обновить</span>
+                </button>
+
+                <!-- Order switcher -->
+                <button class="btn-pill" id="btnTgOrderToggle" title="Порядок постов">
+                  <span id="appOrderToggleText">⬆ Снизу новые</span>
+                </button>
+
+                <!-- Copy all -->
+                <button class="btn-pill" id="btnTgCopyAll" title="Скопировать все посты">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+
+                <!-- Open in Telegram -->
+                <a class="btn-pill primary" id="btnTgOpenTelegram" target="_blank" rel="noopener">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                  <span>В TG ↗</span>
+                </a>
+              </div>
+            </div>
+
+            <!-- Channel Description -->
+            <div id="tgChatDesc" style="padding: 8px 20px; font-size: 12.5px; color: var(--text-muted); background: rgba(255, 255, 255, 0.02); border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: none;"></div>
+
+            <!-- Feed of Messages -->
+            <div class="modal-chat-body" id="tgAppPostsContainer">
+              <!-- Messages rendered here -->
+            </div>
+
+            <!-- Floating Jump to Bottom Button -->
+            <button class="btn-scroll-bottom" id="btnTgAppScrollBottom">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+              Вниз к новым
+            </button>
+          </main>
         </div>
-
-        <div class="folders-global-actions">
-          <button class="btn-pill" id="btnOpenAddlistModal" style="background: rgba(41, 182, 246, 0.15); border-color: rgba(41, 182, 246, 0.4); color: var(--tg-cyan);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-            </svg>
-            Импорт папки t.me/addlist
-          </button>
-          <button class="btn-pill primary" id="btnOpenNewFolderModal">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"/>
-              <line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            Новая папка
-          </button>
-        </div>
-      </div>
-
-      <!-- Horizontal Folder Pills -->
-      <div class="folder-tabs-wrapper">
-        <div class="folder-tabs" id="folderTabsList">
-          <!-- Rendered dynamically: All channels + custom folders -->
-        </div>
-      </div>
-
-      <!-- Current Folder Info Banner -->
-      <div class="folder-active-banner" id="folderActiveBanner">
-        <!-- Rendered dynamically -->
-      </div>
-
-      <!-- Folder Channels Grid -->
-      <div class="cards-list" id="folderCardsList">
-        <!-- Rendered dynamically -->
       </div>
     </div>
   </div>
