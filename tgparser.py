@@ -15,49 +15,117 @@ USER_AGENT = (
 )
 JINA_BASE = 'https://r.jina.ai/'
 
-def _fetch(url: str, timeout: int = 12) -> str:
-    req = urllib.request.Request(
-        url,
-        headers={
-            'User-Agent': USER_AGENT,
-            'Accept': 'text/plain,text/html,*/*',
-            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-        }
-    )
+RU_MONTHS = [
+    '', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+]
+
+def _format_date(date_iso: str, date_text: str = '') -> tuple[str, str, str]:
+    """Returns (full_date_with_time, date_only, time_str) e.g. ('18 мая 2024, 16:20', '18 мая 2024', '16:20')"""
+    if date_iso:
+        m = re.match(r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})', date_iso)
+        if m:
+            y, mo, d, hh, mm = m.group(1), int(m.group(2)), int(m.group(3)), m.group(4), m.group(5)
+            mo_str = RU_MONTHS[mo] if 1 <= mo <= 12 else str(mo)
+            date_only = f'{d} {mo_str} {y}'
+            full = f'{d} {mo_str} {y}, {hh}:{mm}'
+            return full, date_only, f'{hh}:{mm}'
+    if date_text:
+        return date_text, date_text, date_text
+    return 'Недавно', '', ''
+
+def _fetch(url: str, timeout: int = 12, extra_headers: dict = None) -> str:
+    headers = {
+        'User-Agent': USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,text/plain,*/*',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode('utf-8', errors='ignore')
 
-def parse_telegram_preview(handle: str, before: str | int = None) -> dict:
+def parse_telegram_preview(handle: str, before: str | int = None, fetch_all: bool = False) -> dict:
     handle = handle.lstrip('@').strip()
     handle = re.sub(r'^(?:https?://)?(?:www\.)?t\.me/', '', handle, flags=re.IGNORECASE)
     handle = handle.split('/')[0].split('?')[0].strip()
 
-    direct_url = f'https://t.me/s/{handle}'
-    if before:
-        direct_url += f'?before={before}'
+    def fetch_single(before_param=None):
+        direct_url = f'https://t.me/s/{handle}'
+        if before_param:
+            direct_url += f'?before={before_param}'
+        
+        # 1. Try direct fetch first (works on Vercel / unblocked network)
+        try:
+            html_doc = _fetch(direct_url, timeout=5)
+            if 'tgme_widget_message' in html_doc:
+                return _parse_html_preview(handle, html_doc)
+        except Exception:
+            pass
+
+        # 2. Fallback to Jina with X-Return-Format: html
+        try:
+            jina_url = f'{JINA_BASE}{direct_url}'
+            html_doc = _fetch(jina_url, timeout=12, extra_headers={'X-Return-Format': 'html'})
+            if 'tgme_widget_message' in html_doc:
+                return _parse_html_preview(handle, html_doc)
+            return _parse_jina_preview(handle, html_doc)
+        except Exception as e:
+            raise RuntimeError(f'Не удалось загрузить посты канала @{handle}: {e}')
+
+    first_res = fetch_single(before)
+    if not fetch_all or not first_res.get('posts'):
+        return first_res
+
+    # Auto-fetch older pages to load all posts of the channel
+    all_posts = list(first_res['posts'])
+    seen_ids = {p['id'] for p in all_posts}
     
-    # Try direct fetch first (works on Vercel / unblocked network)
+    for _ in range(5):
+        num_ids = [int(p['id']) for p in all_posts if p['id'].isdigit()]
+        if not num_ids:
+            break
+        min_id = min(num_ids)
+        if min_id <= 1:
+            break
+
+        try:
+            older_res = fetch_single(before_param=min_id)
+            older_posts = [p for p in older_res.get('posts', []) if p['id'] not in seen_ids]
+            if not older_posts:
+                break
+            for p in older_posts:
+                seen_ids.add(p['id'])
+                all_posts.append(p)
+        except Exception:
+            break
+
+    # Sort chronological (oldest top -> newest bottom)
     try:
-        html_doc = _fetch(direct_url, timeout=5)
-        if 'tgme_widget_message' in html_doc:
-            return _parse_html_preview(handle, html_doc)
+        all_posts.sort(key=lambda p: int(p['id']))
     except Exception:
         pass
 
-    # Fallback to Jina reader mirror
-    try:
-        jina_url = f'{JINA_BASE}{direct_url}'
-        md = _fetch(jina_url, timeout=12)
-        return _parse_jina_preview(handle, md)
-    except Exception as e:
-        raise RuntimeError(f'Не удалось загрузить посты канала @{handle}: {e}')
+    first_res['posts'] = all_posts
+    first_res['count'] = len(all_posts)
+    return first_res
 
 def _parse_html_preview(handle: str, html_doc: str) -> dict:
     title_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_header_title[^"]*"[^>]*>[\s\S]*?<span[^>]*dir="auto">([\s\S]*?)</span>', html_doc)
     title = html.unescape(re.sub(r'<[^>]+>', '', title_m.group(1))).strip() if title_m else handle
 
-    avatar_m = re.search(r'<img[^>]*class="[^"]*tgme_page_photo_image[^"]*"[^>]*src="([^"]+)"', html_doc)
+    # Multi-pattern avatar detection
+    avatar_m = re.search(r'<img[^>]+src="([^"]+)"[^>]*class="[^"]*tgme_page_photo_image', html_doc)
+    if not avatar_m:
+        avatar_m = re.search(r'class="[^"]*tgme_page_photo_image[^"]*"[^>]*<img[^>]+src="([^"]+)"', html_doc)
+    if not avatar_m:
+        avatar_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info[^"]*"[\s\S]*?<img[^>]+src="([^"]+)"', html_doc)
+    if not avatar_m:
+        avatar_m = re.search(r'<img[^>]+src="([^"]+)"', html_doc)
     avatar = avatar_m.group(1) if avatar_m else None
+    if avatar:
+        avatar = re.sub(r'\\([_\-])', r'\1', avatar)
 
     sub_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_counter[^"]*"[^>]*>[\s\S]*?<span[^>]*class="[^"]*counter_value[^"]*"[^>]*>([\s\S]*?)</span>[\s\S]*?<span[^>]*class="[^"]*counter_type[^"]*"[^>]*>([\s\S]*?)</span>', html_doc)
     subscribers = ''
@@ -92,6 +160,7 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
         time_m = re.search(r'<time[^>]*datetime="([^"]+)"[^>]*>([\s\S]*?)</time>', clean_chunk)
         date_iso = time_m.group(1) if time_m else ''
         date_text = html.unescape(time_m.group(2)).strip() if time_m else ''
+        full_date, date_only, time_str = _format_date(date_iso, date_text)
 
         views_m = re.search(r'<span[^>]*class="[^"]*tgme_widget_message_views[^"]*"[^>]*>([\s\S]*?)</span>', clean_chunk)
         views = html.unescape(views_m.group(1)).strip() if views_m else ''
@@ -108,7 +177,9 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
             'postId': post_id,
             'url': f'https://t.me/{post_id}',
             'text': text,
-            'date': date_text or date_iso,
+            'date': full_date,
+            'dateOnly': date_only,
+            'time': time_str,
             'datetime': date_iso,
             'views': views,
             'images': photos[:6],

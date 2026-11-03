@@ -12,7 +12,7 @@ let currentQuery = '';
 let isSearching = false;
 let currentChannelData = null;
 let currentPostsData = [];
-let isAscendingOrder = false; // false = newest first (от новых к старым), true = oldest first
+let isAscendingOrder = true; // true = TG style (top: older, bottom: newer), false = newest first
 let filterPostText = '';
 
 // Fallback initial recommendations
@@ -419,7 +419,7 @@ async function openChannelModal(id) {
   $('#channelModal').classList.add('open');
 
   try {
-    const res = await fetch(`/api/posts?handle=${encodeURIComponent(channel.cleanHandle)}`);
+    const res = await fetch(`/api/posts?handle=${encodeURIComponent(channel.cleanHandle)}&all=1`);
     const data = await res.json();
     
     if (data.channel) {
@@ -438,8 +438,7 @@ async function openChannelModal(id) {
       currentPostsData = data.posts;
       renderPosts();
       
-      // Auto-scroll depending on order:
-      // If ascending (TG bottom-up), scroll to bottom. If descending (newest first), start at top.
+      // Auto-scroll to the bottom in Telegram mode (newest messages at the bottom)
       setTimeout(() => {
         const container = $('#postsContainer');
         if (isAscendingOrder) {
@@ -448,6 +447,8 @@ async function openChannelModal(id) {
           container.scrollTop = 0;
         }
       }, 100);
+
+      notify(`Загружены все сообщения (${currentPostsData.length} постов)`);
     } else {
       $('#postsContainer').innerHTML = `
         <div class="empty-box" style="padding: 40px 0;">
@@ -604,6 +605,11 @@ function renderPosts() {
   let htmlOutput = isAscendingOrder ? paginationButtonHtml : '';
   let lastDatePill = '';
 
+  const authorInitial = (currentChannelData?.name || currentChannelData?.cleanHandle || '?')[0].toUpperCase();
+  const authorAvatarImg = currentChannelData?.avatar 
+    ? `<img src="${esc(currentChannelData.avatar)}" alt="" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerText='${authorInitial}';">`
+    : authorInitial;
+
   list.forEach(p => {
     // Date divider pill when date changes
     const dateLabel = p.dateOnly || (p.date ? p.date.split(',')[0].trim() : '');
@@ -629,9 +635,15 @@ function renderPosts() {
     htmlOutput += `
       <div class="post-bubble" id="post-bubble-${esc(p.id)}">
         <div class="post-bubble-header">
-          <span class="post-id-badge">#${esc(p.id)}</span>
+          <div class="post-author-row">
+            <div class="post-author-avatar">
+              ${authorAvatarImg}
+            </div>
+            <span class="post-author-name">${esc(currentChannelData ? currentChannelData.name : 'Канал')}</span>
+            <span class="post-id-badge">#${esc(p.id)}</span>
+          </div>
           <div class="post-bubble-meta">
-            <span class="post-date-tag">${esc(p.date || 'Недавно')}</span>
+            <span class="post-date-tag">📅 ${esc(p.date || 'Недавно')}</span>
             ${p.views ? `<span>👁 ${esc(p.views)}</span>` : ''}
           </div>
         </div>
@@ -814,7 +826,7 @@ function initEvents() {
   // Order switch
   $('#modalOrderToggle').onclick = () => {
     isAscendingOrder = !isAscendingOrder;
-    $('#orderToggleText').textContent = isAscendingOrder ? '⬆ Снизу вверх (как в TG)' : '⬇ Сверху новые (от новых к старым)';
+    $('#orderToggleText').textContent = isAscendingOrder ? '⬆ Снизу новые (как в TG)' : '⬇ Сверху новые';
     renderPosts();
     setTimeout(() => {
       const c = $('#postsContainer');
