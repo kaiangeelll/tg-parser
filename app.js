@@ -15,6 +15,28 @@ let currentPostsData = [];
 let isAscendingOrder = true; // true = TG style (top: older, bottom: newer), false = newest first
 let filterPostText = '';
 
+// Folders State
+let folders = JSON.parse(localStorage.getItem('tg_folders') || 'null');
+if (!folders || !folders.length) {
+  folders = [
+    { id: 'all', name: 'Все каналы', icon: '📁', isDefault: true }
+  ];
+  localStorage.setItem('tg_folders', JSON.stringify(folders));
+}
+let activeFolderId = 'all';
+let currentSectionTab = 'search'; // 'search' or 'folders'
+let filterInFolderText = '';
+let channelForFolderAssignment = null;
+
+// Migrate saved channels to ensure folderIds exists
+savedChannels = savedChannels.map(c => {
+  if (!c.folderIds || !Array.isArray(c.folderIds) || !c.folderIds.length) {
+    c.folderIds = ['all'];
+  }
+  return c;
+});
+localStorage.setItem('tg_saved_channels', JSON.stringify(savedChannels));
+
 // Fallback initial recommendations
 const INITIAL_PROMPTS = ['новости', 'технологии', 'дизайн', 'разработка', 'нейросети', 'крипта'];
 
@@ -149,38 +171,141 @@ function normalizeChannel(raw) {
   return channel;
 }
 
-// Saved channels management
+// Saved channels & Folders persistence
 function isSaved(id) {
   return savedChannels.some(c => c.id === id);
 }
 
+function saveFolders() {
+  localStorage.setItem('tg_folders', JSON.stringify(folders));
+  localStorage.setItem('tg_saved_channels', JSON.stringify(savedChannels));
+  updateBadges();
+}
+
+function updateBadges() {
+  const badge = $('#myChannelsBadge');
+  if (badge) {
+    badge.textContent = savedChannels.length;
+  }
+}
+
+function switchSection(tabName) {
+  currentSectionTab = tabName;
+  $$('.section-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
+  const sView = $('#viewSearch');
+  const fView = $('#viewFolders');
+  if (sView) sView.classList.toggle('active', tabName === 'search');
+  if (fView) fView.classList.toggle('active', tabName === 'folders');
+
+  if (tabName === 'folders') {
+    renderFoldersView();
+  }
+}
+
 function toggleSave(id) {
-  const channel = catalog.get(id);
+  const channel = catalog.get(id) || savedChannels.find(c => c.id === id);
   if (!channel) return;
   
   if (isSaved(id)) {
     savedChannels = savedChannels.filter(c => c.id !== id);
-    notify(`Удалено из подборки: ${channel.handle}`);
+    notify(`Удалено из сохранённых: ${channel.handle}`);
   } else {
+    if (!channel.folderIds || !channel.folderIds.length) {
+      channel.folderIds = ['all'];
+      if (activeFolderId && activeFolderId !== 'all') {
+        channel.folderIds.push(activeFolderId);
+      }
+    }
     savedChannels.unshift(channel);
     notify(`Сохранено: ${channel.handle}`);
   }
   
-  localStorage.setItem('tg_saved_channels', JSON.stringify(savedChannels));
-  renderSaved();
+  saveFolders();
   renderCards();
+  if (currentSectionTab === 'folders') {
+    renderFoldersView();
+  }
 }
 
-// Render cards list
+// Single Channel Card Component (used in Search and Folders)
+function renderSingleChannelCard(c, inFolderView = false) {
+  const saved = isSaved(c.id);
+  const initial = (c.name || c.cleanHandle || '?')[0].toUpperCase();
+  const avatarHtml = c.avatar 
+    ? `<img src="${esc(c.avatar)}" alt="${esc(c.name)}" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">` 
+    : initial;
+
+  // Folder tags
+  const chFolderIds = c.folderIds || ['all'];
+  const folderTagsHtml = folders
+    .filter(f => f.id !== 'all' && chFolderIds.includes(f.id))
+    .map(f => `<span class="channel-cat-pill" style="color:var(--accent);border-color:rgba(56,139,253,0.3);background:rgba(56,139,253,0.08);">📁 ${esc(f.name)}</span>`)
+    .join('');
+
+  return `
+    <article class="channel-card" data-channel-id="${esc(c.id)}">
+      <div class="channel-avatar">
+        ${avatarHtml}
+      </div>
+
+      <div class="channel-info">
+        <div class="channel-name-row">
+          <span class="channel-title">${esc(c.name)}</span>
+          ${c.isDirectProbe ? '' : `<svg class="verified-icon" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 2.4 2.8 3.7-.5 1 3.5 3.3 1.7-1 3.5 1.7 3.3-2.8 2.4.5 3.7-3.5 1-1.7 3.3-3.5-1-3.3 1.7-2.4-2.8-3.7.5-1-3.5-3.3-1.7 1-3.5-1.7-3.3 2.8-2.4-.5-3.7 3.5-1 1.7-3.3 3.5 1 3.3-1.7z"/></svg>`}
+        </div>
+
+        <div class="channel-handle-row">
+          <span>${esc(c.handle)}</span>
+          ${c.isAiMatched ? `<span class="channel-cat-pill" style="color:#38d39f;border-color:rgba(56,211,159,0.4);background:rgba(56,211,159,0.1);">🤖 Найдено ИИ</span>` : `<span class="channel-cat-pill">${esc(c.category)}</span>`}
+          ${folderTagsHtml}
+        </div>
+
+        <div class="channel-desc">${esc(c.description)}</div>
+      </div>
+
+      <div class="channel-stats">
+        <div class="channel-subs">${c.count != null ? esc(formatSubs(c.count)) : '—'}</div>
+        <div class="channel-subs-label">подписчиков</div>
+      </div>
+
+      <div class="channel-actions">
+        <button class="btn-card-action" data-action="folder" data-id="${esc(c.id)}" title="Управление папками">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <button class="btn-card-action ${saved ? 'active' : ''}" data-action="save" data-id="${esc(c.id)}" title="${saved ? 'Удалить из сохранённых' : 'Сохранить'}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="${saved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
+            <path d="m19 21-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <button class="btn-card-action" data-action="copy" data-text="${esc(c.handle)}" title="Скопировать ник">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
+        ${inFolderView && activeFolderId !== 'all' ? `
+          <button class="btn-card-action" data-action="remove-from-folder" data-id="${esc(c.id)}" title="Убрать из этой папки" style="color:#ff5252;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        ` : ''}
+      </div>
+    </article>
+  `;
+}
+
+// Render cards list in Search tab
 function renderCards() {
   const list = currentResults;
   const cardsList = $('#cardsList');
   const resultsCount = $('#resultsCount');
+  if (!cardsList) return;
   
   if (isSearching) {
-    resultsCount.textContent = 'поиск...';
+    if (resultsCount) resultsCount.textContent = 'поиск...';
     cardsList.innerHTML = `
-      <div class="empty-box">
+      <div class="empty-box" style="grid-column: 1 / -1;">
         <div class="empty-icon">🔍</div>
         <div>Ищем в каталоге и проверяем точные имена каналов...</div>
       </div>
@@ -188,90 +313,309 @@ function renderCards() {
     return;
   }
 
-  resultsCount.textContent = `${list.length} найдено`;
+  if (resultsCount) resultsCount.textContent = `${list.length} найдено`;
 
   if (!list.length) {
     cardsList.innerHTML = `
-      <div class="empty-box">
+      <div class="empty-box" style="grid-column: 1 / -1;">
         <div class="empty-icon">🔍</div>
-        <div>Ничего не найдено.<br>Попробуй по-другому: <b>«новости»</b>, <b>«@ник»</b>, <b>«t.me/username»</b> или напиши имя канала латиницей.</div>
+        <div>Ничего не найдено.<br>Попробуй по-другому: <b>«новости»</b>, <b>«@ник»</b>, <b>«t.me/username»</b> или ссылку на папку <b>«t.me/addlist/...»</b>.</div>
       </div>
     `;
     return;
   }
 
-  cardsList.innerHTML = list.map(c => {
-    const saved = isSaved(c.id);
-    const initial = (c.name || c.cleanHandle || '?')[0].toUpperCase();
-    const avatarHtml = c.avatar 
-      ? `<img src="${esc(c.avatar)}" alt="${esc(c.name)}" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">` 
-      : initial;
+  cardsList.innerHTML = list.map(c => renderSingleChannelCard(c, false)).join('');
+}
+
+// Render folder tabs & folder view
+function renderFolderTabs() {
+  const container = $('#folderTabsList');
+  if (!container) return;
+
+  container.innerHTML = folders.map(f => {
+    let count = 0;
+    if (f.id === 'all') {
+      count = savedChannels.length;
+    } else {
+      count = savedChannels.filter(c => (c.folderIds || []).includes(f.id)).length;
+    }
+    const countDisplay = (f.source === 'addlist' && count === 0 && f.chatCount) 
+      ? `TG: ${f.chatCount}` 
+      : count;
 
     return `
-      <article class="channel-card" data-channel-id="${esc(c.id)}">
-        <div class="channel-avatar">
-          ${avatarHtml}
-        </div>
-
-        <div class="channel-info">
-          <div class="channel-name-row">
-            <span class="channel-title">${esc(c.name)}</span>
-            ${c.isDirectProbe ? '' : `<svg class="verified-icon" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 2.4 2.8 3.7-.5 1 3.5 3.3 1.7-1 3.5 1.7 3.3-2.8 2.4.5 3.7-3.5 1-1.7 3.3-3.5-1-3.3 1.7-2.4-2.8-3.7.5-1-3.5-3.3-1.7 1-3.5-1.7-3.3 2.8-2.4-.5-3.7 3.5-1 1.7-3.3 3.5 1 3.3-1.7z"/></svg>`}
-          </div>
-
-          <div class="channel-handle-row">
-            <span>${esc(c.handle)}</span>
-            ${c.isAiMatched ? `<span class="channel-cat-pill" style="color:#38d39f;border-color:rgba(56,211,159,0.4);background:rgba(56,211,159,0.1);">🤖 Найдено ИИ</span>` : `<span class="channel-cat-pill">${esc(c.category)}</span>`}
-          </div>
-
-          <div class="channel-desc">${esc(c.description)}</div>
-        </div>
-
-        <div class="channel-stats">
-          <div class="channel-subs">${c.count != null ? esc(formatSubs(c.count)) : '—'}</div>
-          <div class="channel-subs-label">подписчиков</div>
-        </div>
-
-        <div class="channel-actions">
-          <button class="btn-card-action ${saved ? 'active' : ''}" data-action="save" data-id="${esc(c.id)}" title="${saved ? 'Удалить из сохранённых' : 'Сохранить'}">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="${saved ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2">
-              <path d="m19 21-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-            </svg>
-          </button>
-          <button class="btn-card-action" data-action="copy" data-text="${esc(c.handle)}" title="Скопировать ник">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-            </svg>
-          </button>
-        </div>
-      </article>
+      <div class="folder-pill ${f.id === activeFolderId ? 'active' : ''}" data-folder-id="${esc(f.id)}">
+        <span>${esc(f.icon || '📁')}</span>
+        <span>${esc(f.name)}</span>
+        <span class="folder-pill-count">${esc(countDisplay)}</span>
+      </div>
     `;
   }).join('');
 }
 
-// Render saved channels in sidebar
-function renderSaved() {
-  const container = $('#savedList');
-  if (!savedChannels.length) {
-    container.innerHTML = `
-      <div style="text-align: center; color: var(--text-dim); padding: 18px 0; font-size: 12.5px;">
-        Здесь появятся каналы,<br>которые ты добавишь в избранное
+function renderFoldersView() {
+  renderFolderTabs();
+  updateBadges();
+
+  const folder = folders.find(f => f.id === activeFolderId) || folders[0];
+  const banner = $('#folderActiveBanner');
+  const cardsList = $('#folderCardsList');
+  if (!banner || !cardsList) return;
+
+  // Channels in current folder
+  let list = activeFolderId === 'all' 
+    ? [...savedChannels] 
+    : savedChannels.filter(c => (c.folderIds || []).includes(activeFolderId));
+
+  if (filterInFolderText) {
+    const f = filterInFolderText.toLowerCase();
+    list = list.filter(c => (c.name || '').toLowerCase().includes(f) || (c.handle || '').toLowerCase().includes(f) || (c.description || '').toLowerCase().includes(f));
+  }
+
+  let tgLinkBtn = '';
+  if (folder.url || folder.slug) {
+    const tgUrl = folder.url || `https://t.me/addlist/${folder.slug}`;
+    tgLinkBtn = `
+      <a href="${esc(tgUrl)}" target="_blank" rel="noopener" class="btn-pill" style="color: var(--tg-cyan); border-color: rgba(41, 182, 246, 0.4); background: rgba(41, 182, 246, 0.1);">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        Открыть папку в TG ↗
+      </a>
+    `;
+  }
+
+  let actionsHtml = `
+    <div class="modal-search-box">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" id="folderChannelSearchInput" placeholder="Поиск в этой папке..." value="${esc(filterInFolderText)}">
+    </div>
+    ${tgLinkBtn}
+  `;
+
+  if (!folder.isDefault) {
+    actionsHtml += `
+      <button class="btn-icon" id="btnRenameFolder" title="Переименовать папку" data-id="${esc(folder.id)}">✏️</button>
+      <button class="btn-icon" id="btnDeleteFolder" title="Удалить папку" data-id="${esc(folder.id)}" style="color: #ff5252;">🗑️</button>
+    `;
+  }
+
+  banner.innerHTML = `
+    <div class="folder-banner-left">
+      <div class="folder-banner-title-row">
+        <span style="font-size: 24px;">${esc(folder.icon || '📁')}</span>
+        <span class="folder-banner-title">${esc(folder.name)}</span>
+        ${folder.source === 'addlist' ? '<span class="channel-cat-pill" style="color:var(--tg-cyan);border-color:rgba(41,182,246,0.3);background:rgba(41,182,246,0.08);">🔗 Telegram Addlist</span>' : ''}
+      </div>
+      <div class="folder-banner-meta">
+        <span>Каналов сохранено: <b>${list.length}</b></span>
+        ${folder.chatCount ? `<span>В Telegram списке: <b>${folder.chatCount} чатов</b></span>` : ''}
+      </div>
+    </div>
+    <div class="folder-banner-actions">
+      ${actionsHtml}
+    </div>
+  `;
+
+  const searchInput = $('#folderChannelSearchInput');
+  if (searchInput) {
+    searchInput.oninput = (e) => {
+      filterInFolderText = e.target.value.trim();
+      renderFoldersView();
+      const inp = $('#folderChannelSearchInput');
+      if (inp) {
+        inp.focus();
+        inp.selectionStart = inp.selectionEnd = inp.value.length;
+      }
+    };
+  }
+
+  const renameBtn = $('#btnRenameFolder');
+  if (renameBtn) {
+    renameBtn.onclick = () => {
+      const newName = prompt('Новое название папки:', folder.name);
+      if (newName && newName.trim() && newName.trim() !== folder.name) {
+        folder.name = newName.trim();
+        saveFolders();
+        renderFoldersView();
+        notify(`Папка переименована в «${folder.name}»`);
+      }
+    };
+  }
+
+  const deleteBtn = $('#btnDeleteFolder');
+  if (deleteBtn) {
+    deleteBtn.onclick = () => {
+      if (confirm(`Удалить папку «${folder.name}»? (Каналы останутся в общем списке)`)) {
+        folders = folders.filter(f => f.id !== folder.id);
+        savedChannels.forEach(c => {
+          c.folderIds = (c.folderIds || []).filter(fid => fid !== folder.id);
+          if (!c.folderIds.length) c.folderIds = ['all'];
+        });
+        activeFolderId = 'all';
+        saveFolders();
+        renderFoldersView();
+        notify('Папка удалена');
+      }
+    };
+  }
+
+  if (!list.length) {
+    cardsList.innerHTML = `
+      <div class="empty-box" style="padding: 40px 0; grid-column: 1 / -1;">
+        <div class="empty-icon">${esc(folder.icon || '📁')}</div>
+        <div>В папке «${esc(folder.name)}» пока нет сохранённых каналов.</div>
+        <div style="margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+          <button class="btn-pill primary" id="btnGoSearchFromFolder">🔍 Найти каналы в каталоге</button>
+          ${folder.url ? `<a href="${esc(folder.url)}" target="_blank" rel="noopener" class="btn-pill">Открыть в Telegram ↗</a>` : ''}
+        </div>
       </div>
     `;
+    const goBtn = $('#btnGoSearchFromFolder');
+    if (goBtn) {
+      goBtn.onclick = () => switchSection('search');
+    }
     return;
   }
 
-  container.innerHTML = savedChannels.map(c => {
-    const initial = (c.name || c.cleanHandle || '?')[0].toUpperCase();
-    return `
-      <div class="saved-item" data-channel-id="${esc(c.id)}">
-        <div class="saved-avatar">${initial}</div>
-        <div class="saved-name">${esc(c.name)}</div>
-        <div class="saved-subs">${esc(formatSubs(c.count))}</div>
-      </div>
-    `;
-  }).join('');
+  cardsList.innerHTML = list.map(c => renderSingleChannelCard(c, true)).join('');
+}
+
+// Assign Channel to Folders Modal
+function openAssignFolderModal(channelId) {
+  const channel = catalog.get(channelId) || savedChannels.find(c => c.id === channelId);
+  if (!channel) return;
+  channelForFolderAssignment = channel;
+
+  const currentFolderIds = new Set(channel.folderIds || ['all']);
+  const titleEl = $('#assignModalTitle');
+  if (titleEl) {
+    titleEl.textContent = `Папки для ${channel.name || channel.handle}`;
+  }
+
+  const listEl = $('#assignFolderCheckboxes');
+  if (listEl) {
+    listEl.innerHTML = folders.map(f => {
+      const isChecked = currentFolderIds.has(f.id);
+      return `
+        <label class="assign-folder-item">
+          <input type="checkbox" value="${esc(f.id)}" ${isChecked ? 'checked' : ''} ${f.id === 'all' ? 'disabled checked' : ''}>
+          <span>${esc(f.icon || '📁')}</span>
+          <span style="font-weight: 600; flex: 1;">${esc(f.name)}</span>
+          ${f.source === 'addlist' ? '<span class="channel-cat-pill" style="font-size:10.5px;">t.me</span>' : ''}
+        </label>
+      `;
+    }).join('');
+  }
+
+  $('#assignFolderModal').classList.add('open');
+  document.body.classList.add('modal-open');
+}
+
+function saveChannelFolderAssignments() {
+  if (!channelForFolderAssignment) return;
+  const checkboxes = $$('#assignFolderCheckboxes input[type="checkbox"]');
+  const selected = ['all'];
+  checkboxes.forEach(cb => {
+    if (cb.checked && cb.value !== 'all') {
+      selected.push(cb.value);
+    }
+  });
+
+  channelForFolderAssignment.folderIds = selected;
+  if (!isSaved(channelForFolderAssignment.id)) {
+    savedChannels.unshift(channelForFolderAssignment);
+  } else {
+    const existing = savedChannels.find(c => c.id === channelForFolderAssignment.id);
+    if (existing) existing.folderIds = selected;
+  }
+
+  saveFolders();
+  $('#assignFolderModal').classList.remove('open');
+  document.body.classList.remove('modal-open');
+  notify(`Папки канала обновлены!`);
+  renderCards();
+  if (currentSectionTab === 'folders') {
+    renderFoldersView();
+  }
+}
+
+// Create custom folder
+function createCustomFolder(name, icon = '📁') {
+  const cleanName = (name || '').trim();
+  if (!cleanName) {
+    notify('Введи название папки');
+    return;
+  }
+  const newFolder = {
+    id: 'folder_' + Date.now(),
+    name: cleanName,
+    icon: icon,
+    isDefault: false
+  };
+  folders.push(newFolder);
+  activeFolderId = newFolder.id;
+  saveFolders();
+  renderFoldersView();
+  switchSection('folders');
+  notify(`Создана папка «${cleanName}»`);
+}
+
+// Import Telegram Folder Addlist
+async function importTelegramAddlist(urlOrSlug, extraHandlesText = '') {
+  if (!urlOrSlug) {
+    notify('Укажите ссылку на папку Telegram (t.me/addlist/...)');
+    return;
+  }
+
+  notify('Загружаем данные папки Telegram...');
+  try {
+    const res = await fetch(`/api/addlist?url=${encodeURIComponent(urlOrSlug.trim())}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Не удалось импортировать папку');
+
+    const folderId = 'addlist_' + data.slug;
+    let existing = folders.find(f => f.id === folderId || f.slug === data.slug);
+    if (!existing) {
+      existing = {
+        id: folderId,
+        name: data.title || 'Папка Telegram',
+        icon: '⭐️',
+        source: 'addlist',
+        url: data.url,
+        slug: data.slug,
+        chatCount: data.chatCount || 0,
+        isDefault: false
+      };
+      folders.push(existing);
+    } else {
+      existing.name = data.title || existing.name;
+      existing.chatCount = data.chatCount || existing.chatCount;
+      existing.url = data.url;
+    }
+
+    // Parse any extra handles provided by user
+    if (extraHandlesText) {
+      const handles = extraHandlesText.match(/@?[A-Za-z0-9_]{3,32}/g) || [];
+      handles.forEach(h => {
+        const clean = h.replace(/^@/, '').trim();
+        if (clean && clean.toLowerCase() !== 'addlist' && clean.toLowerCase() !== 's') {
+          const chObj = normalizeChannel({ handle: clean, name: clean });
+          if (!chObj.folderIds) chObj.folderIds = ['all'];
+          if (!chObj.folderIds.includes(existing.id)) chObj.folderIds.push(existing.id);
+          if (!isSaved(chObj.id)) savedChannels.unshift(chObj);
+        }
+      });
+    }
+
+    activeFolderId = existing.id;
+    saveFolders();
+    renderFoldersView();
+    switchSection('folders');
+    notify(`✅ Папка «${existing.name}» (${existing.chatCount} чатов) добавлена!`, 4000);
+    return existing;
+  } catch (err) {
+    notify('Ошибка импорта: ' + err.message, 4000);
+  }
 }
 
 // Search API
@@ -279,6 +623,12 @@ async function performSearch(queryText = '') {
   const input = queryText || $('#searchInput').value.trim();
   if (!input) {
     notify('Введи название, ключевое слово или ник канала');
+    return;
+  }
+
+  // Detect Telegram Addlist link in search bar directly!
+  if (/addlist\//i.test(input) || /t\.me\/addlist/i.test(input)) {
+    await importTelegramAddlist(input);
     return;
   }
 
@@ -814,15 +1164,39 @@ function initEvents() {
     performSearch();
   };
 
-  $('#cardsList').onclick = e => {
+  // Section tabs switcher
+  const navTabs = $('#mainSectionNav');
+  if (navTabs) {
+    navTabs.onclick = e => {
+      const btn = e.target.closest('.section-tab');
+      if (btn && btn.dataset.tab) {
+        switchSection(btn.dataset.tab);
+      }
+    };
+  }
+
+  // Unified card list click handler (supports Search results & Folder results)
+  const handleCardListClick = e => {
     const actionBtn = e.target.closest('[data-action]');
     if (actionBtn) {
       e.stopPropagation();
       const action = actionBtn.dataset.action;
+      const chId = actionBtn.dataset.id;
       if (action === 'save') {
-        toggleSave(actionBtn.dataset.id);
+        toggleSave(chId);
       } else if (action === 'copy') {
         copyToClipboard(actionBtn.dataset.text, 'Ник канала скопирован!');
+      } else if (action === 'folder') {
+        openAssignFolderModal(chId);
+      } else if (action === 'remove-from-folder') {
+        const channel = savedChannels.find(c => c.id === chId);
+        if (channel && activeFolderId !== 'all') {
+          channel.folderIds = (channel.folderIds || []).filter(id => id !== activeFolderId);
+          if (!channel.folderIds.length) channel.folderIds = ['all'];
+          saveFolders();
+          renderFoldersView();
+          notify(`Канал удалён из этой папки`);
+        }
       }
       return;
     }
@@ -833,21 +1207,100 @@ function initEvents() {
     }
   };
 
-  $('#savedList').onclick = e => {
-    const item = e.target.closest('[data-channel-id]');
-    if (item) {
-      openChannelModal(item.dataset.channelId);
-    }
-  };
+  const cardsList = $('#cardsList');
+  if (cardsList) cardsList.onclick = handleCardListClick;
 
-  $('#clearSavedBtn').onclick = () => {
-    if (!savedChannels.length) return;
-    savedChannels = [];
-    localStorage.removeItem('tg_saved_channels');
-    renderSaved();
-    renderCards();
-    notify('Подборка очищена');
+  const folderCardsList = $('#folderCardsList');
+  if (folderCardsList) folderCardsList.onclick = handleCardListClick;
+
+  // Folder tabs click
+  const folderTabs = $('#folderTabsList');
+  if (folderTabs) {
+    folderTabs.onclick = e => {
+      const pill = e.target.closest('.folder-pill');
+      if (pill && pill.dataset.folderId) {
+        activeFolderId = pill.dataset.folderId;
+        renderFoldersView();
+      }
+    };
+  }
+
+  // Addlist modal
+  const addlistModal = $('#addlistModal');
+  const openAddlist = () => {
+    $('#addlistLinkInput').value = '';
+    $('#addlistExtraHandles').value = '';
+    addlistModal.classList.add('open');
+    document.body.classList.add('modal-open');
+    setTimeout(() => $('#addlistLinkInput').focus(), 50);
   };
+  const closeAddlist = () => {
+    addlistModal.classList.remove('open');
+    document.body.classList.remove('modal-open');
+  };
+  if ($('#btnOpenAddlistModal')) $('#btnOpenAddlistModal').onclick = openAddlist;
+  if ($('#closeAddlistModal')) $('#closeAddlistModal').onclick = closeAddlist;
+  if ($('#cancelAddlistBtn')) $('#cancelAddlistBtn').onclick = closeAddlist;
+  if ($('#submitAddlistBtn')) {
+    $('#submitAddlistBtn').onclick = async () => {
+      const url = $('#addlistLinkInput').value.trim();
+      const extra = $('#addlistExtraHandles').value.trim();
+      if (!url) {
+        notify('Вставьте ссылку на папку Telegram (t.me/addlist/...)');
+        return;
+      }
+      closeAddlist();
+      await importTelegramAddlist(url, extra);
+    };
+  }
+
+  // New folder modal
+  const newFolderModal = $('#newFolderModal');
+  const openNewFolder = () => {
+    $('#newFolderNameInput').value = '';
+    newFolderModal.classList.add('open');
+    document.body.classList.add('modal-open');
+    setTimeout(() => $('#newFolderNameInput').focus(), 50);
+  };
+  const closeNewFolder = () => {
+    newFolderModal.classList.remove('open');
+    document.body.classList.remove('modal-open');
+  };
+  if ($('#btnOpenNewFolderModal')) $('#btnOpenNewFolderModal').onclick = openNewFolder;
+  if ($('#closeNewFolderModal')) $('#closeNewFolderModal').onclick = closeNewFolder;
+  if ($('#cancelNewFolderBtn')) $('#cancelNewFolderBtn').onclick = closeNewFolder;
+  if ($('#submitNewFolderBtn')) {
+    $('#submitNewFolderBtn').onclick = () => {
+      const name = $('#newFolderNameInput').value.trim();
+      if (!name) {
+        notify('Введите название папки');
+        return;
+      }
+      closeNewFolder();
+      createCustomFolder(name);
+    };
+  }
+
+  // Assign folder modal
+  const assignModal = $('#assignFolderModal');
+  const closeAssignModal = () => {
+    assignModal.classList.remove('open');
+    document.body.classList.remove('modal-open');
+  };
+  if ($('#closeAssignFolderModal')) $('#closeAssignFolderModal').onclick = closeAssignModal;
+  if ($('#saveAssignFoldersBtn')) $('#saveAssignFoldersBtn').onclick = saveChannelFolderAssignments;
+  if ($('#assignModalCreateFolderBtn')) {
+    $('#assignModalCreateFolderBtn').onclick = () => {
+      const name = prompt('Название новой папки:');
+      if (name && name.trim()) {
+        const nf = { id: 'folder_' + Date.now(), name: name.trim(), icon: '📁', isDefault: false };
+        folders.push(nf);
+        saveFolders();
+        openAssignFolderModal(channelForFolderAssignment.id);
+        notify(`Папка «${nf.name}» создана!`);
+      }
+    };
+  }
 
   // Close modal
   $('#closeChannelModal').onclick = closeModal;
@@ -855,8 +1308,11 @@ function initEvents() {
     if (e.target === $('#channelModal')) closeModal();
   };
   window.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && $('#channelModal').classList.contains('open')) {
-      closeModal();
+    if (e.key === 'Escape') {
+      if ($('#channelModal').classList.contains('open')) closeModal();
+      if ($('#addlistModal').classList.contains('open')) closeAddlist();
+      if ($('#newFolderModal').classList.contains('open')) closeNewFolder();
+      if ($('#assignFolderModal').classList.contains('open')) closeAssignModal();
     }
   });
 
@@ -939,7 +1395,7 @@ function initEvents() {
   const openApi = () => $('#apiModal').classList.add('open');
   const closeApi = () => $('#apiModal').classList.remove('open');
   $('#openApiModal').onclick = openApi;
-  $('#promoApiBtn').onclick = openApi;
+  if ($('#promoApiBtn')) $('#promoApiBtn').onclick = openApi;
   $('#closeApiModal').onclick = closeApi;
   $('#apiModal').onclick = e => {
     if (e.target === $('#apiModal')) closeApi();
@@ -967,7 +1423,8 @@ function initEvents() {
 // Initial load
 async function init() {
   initEvents();
-  renderSaved();
+  updateBadges();
+  renderFolderTabs();
   
   const initialTopic = INITIAL_PROMPTS[Math.floor(Math.random() * INITIAL_PROMPTS.length)];
   $('#searchInput').value = initialTopic;

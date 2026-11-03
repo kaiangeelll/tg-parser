@@ -25,6 +25,29 @@ class handler(HandlerMixin, BaseHTTPRequestHandler):
             if len(query) > 120:
                 return self.send_json(400, {'error': 'Сократи запрос до 120 символов'})
 
+            # Handle Telegram folder share links: t.me/addlist/...
+            if 'addlist' in query.lower():
+                try:
+                    from api.addlist import parse_telegram_addlist
+                    addlist_data = parse_telegram_addlist(query)
+                    return self.send_json(200, {
+                        'is_addlist': True,
+                        'addlist': addlist_data,
+                        'results': [{
+                            'handle': f"addlist_{addlist_data['slug'][:12]}",
+                            'name': addlist_data['title'],
+                            'summary': f"Папка Telegram с {addlist_data['chatCount']} чатами. Нажмите чтобы импортировать в ваши папки.",
+                            'memberCount': addlist_data['chatCount'],
+                            'categories': ['Папка Telegram', 'Addlist'],
+                            'telegramUrl': addlist_data['url'],
+                            '_source': 'telegram_addlist',
+                            'isAddlist': True,
+                            'addlistData': addlist_data
+                        }]
+                    })
+                except Exception:
+                    pass
+
             result = smart_search(
                 query,
                 item_type=item_type,

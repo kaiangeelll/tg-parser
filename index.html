@@ -57,69 +57,87 @@
       </div>
     </header>
 
-    <!-- Hero -->
-    <section class="hero">
-      <div class="hero-tag">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+    <!-- Main Sections Switcher (Вверху разделы) -->
+    <nav class="nav-sections" id="mainSectionNav">
+      <button class="section-tab active" data-tab="search" id="tabBtnSearch">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
-        Умный поиск, просмотр постов и парсер
-      </div>
-      <h1 class="hero-title">Ищи каналы, <span>читай посты</span> и забирай контент</h1>
-      <p class="hero-subtitle">Быстрый поиск по названию, тематике, @нику или t.me ссылке. Парсинг постов и готовое API для подключения к твоим сайтам.</p>
-    </section>
+        <span>Поиск каналов</span>
+      </button>
 
-    <!-- Search Form -->
-    <section class="search-container">
-      <div class="search-box">
-        <div class="search-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"/>
-            <path d="m21 21-4.35-4.35"/>
+      <button class="section-tab" data-tab="folders" id="tabBtnFolders">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span>Мои каналы и папки</span>
+        <span class="tab-counter-badge" id="myChannelsBadge">0</span>
+      </button>
+    </nav>
+
+    <!-- VIEW 1: SEARCH & CATALOG -->
+    <div id="viewSearch" class="app-view active">
+      <!-- Hero -->
+      <section class="hero">
+        <div class="hero-tag">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
           </svg>
+          Умный поиск, просмотр постов и папки
         </div>
-        <input 
-          type="text" 
-          id="searchInput" 
-          class="search-input" 
-          placeholder="Название, ключевое слово, @username или ссылка https://t.me/..." 
-          autocomplete="off"
-        >
-        <button id="searchBtn" class="search-btn">
-          <span>Найти</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-            <path d="M5 12h14M12 5l7 7-7 7"/>
-          </svg>
-        </button>
-      </div>
-    </section>
+        <h1 class="hero-title">Ищи каналы, <span>читай посты</span> и собирай по папкам</h1>
+        <p class="hero-subtitle">Быстрый поиск по названию, тематике, @нику, ссылке t.me или ссылке на папку t.me/addlist/... Добавляй в папки и парси посты без ограничений.</p>
+      </section>
 
-    <!-- Controls & Filters -->
-    <section class="controls-bar">
-      <!-- Item type switch -->
-      <div class="type-switch" id="typeSwitch">
-        <button class="type-btn active" data-type="channel">Каналы</button>
-        <button class="type-btn" data-type="group">Группы</button>
-        <button class="type-btn" data-type="bot">Боты</button>
-      </div>
+      <!-- Search Form -->
+      <section class="search-container">
+        <div class="search-box">
+          <div class="search-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.35-4.35"/>
+            </svg>
+          </div>
+          <input 
+            type="text" 
+            id="searchInput" 
+            class="search-input" 
+            placeholder="Название, @username, ссылка https://t.me/... или папка t.me/addlist/..." 
+            autocomplete="off"
+          >
+          <button id="searchBtn" class="search-btn">
+            <span>Найти</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+        </div>
+      </section>
 
-      <!-- Category tags -->
-      <div class="category-tags" id="categoryTags">
-        <button class="tag-btn active" data-cat="all">Все темы</button>
-        <button class="tag-btn" data-cat="news">Новости</button>
-        <button class="tag-btn" data-cat="tech">Технологии & IT</button>
-        <button class="tag-btn" data-cat="crypto">Криптовалюта</button>
-        <button class="tag-btn" data-cat="business">Бизнес</button>
-        <button class="tag-btn" data-cat="design">Дизайн</button>
-        <button class="tag-btn" data-cat="education">Образование</button>
-        <button class="tag-btn" data-cat="games">Игры</button>
-      </div>
-    </section>
+      <!-- Controls & Filters -->
+      <section class="controls-bar">
+        <!-- Item type switch -->
+        <div class="type-switch" id="typeSwitch">
+          <button class="type-btn active" data-type="channel">Каналы</button>
+          <button class="type-btn" data-type="group">Группы</button>
+          <button class="type-btn" data-type="bot">Боты</button>
+        </div>
 
-    <!-- Main Content -->
-    <main class="content-grid">
-      <!-- Left Column: Results -->
-      <section>
+        <!-- Category tags -->
+        <div class="category-tags" id="categoryTags">
+          <button class="tag-btn active" data-cat="all">Все темы</button>
+          <button class="tag-btn" data-cat="news">Новости</button>
+          <button class="tag-btn" data-cat="tech">Технологии & IT</button>
+          <button class="tag-btn" data-cat="crypto">Криптовалюта</button>
+          <button class="tag-btn" data-cat="business">Бизнес</button>
+          <button class="tag-btn" data-cat="design">Дизайн</button>
+          <button class="tag-btn" data-cat="education">Образование</button>
+          <button class="tag-btn" data-cat="games">Игры</button>
+        </div>
+      </section>
+
+      <!-- Search Results Area (Full Width) -->
+      <main class="content-full">
         <div class="results-header">
           <div class="results-title">
             <span id="resultsHeading">Рекомендуемые каналы</span>
@@ -130,41 +148,52 @@
         <div class="cards-list" id="cardsList">
           <!-- Channels loaded via JS -->
         </div>
-      </section>
+      </main>
+    </div>
 
-      <!-- Right Column: Sidebar -->
-      <aside class="sidebar">
-        <!-- Saved channels -->
-        <div class="side-card">
-          <div class="side-header">
-            <div class="side-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="m19 21-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-              </svg>
-              Моя подборка
-            </div>
-            <button class="side-btn-text" id="clearSavedBtn">Очистить</button>
-          </div>
-          <div class="saved-list" id="savedList">
-            <!-- Saved list items -->
-          </div>
+    <!-- VIEW 2: MY CHANNELS & FOLDERS (Полный раздел каналов и папок) -->
+    <div id="viewFolders" class="app-view">
+      <div class="folders-page-header">
+        <div>
+          <h2 class="folders-page-title">Мои каналы и папки</h2>
+          <p class="folders-page-subtitle">Организуй каналы по папкам или подключи готовую подборку ссылкой <code>t.me/addlist/...</code></p>
         </div>
 
-        <!-- Integration banner -->
-        <div class="integration-promo">
-          <h4>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        <div class="folders-global-actions">
+          <button class="btn-pill" id="btnOpenAddlistModal" style="background: rgba(41, 182, 246, 0.15); border-color: rgba(41, 182, 246, 0.4); color: var(--tg-cyan);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
             </svg>
-            Интеграция с твоим сайтом
-          </h4>
-          <p>Используй этот сайт как готовый парсер-бэкенд: делай прямые запросы к <code>/api/search</code> и <code>/api/posts</code> без блокировок и токенов.</p>
-          <button class="btn-pill" id="promoApiBtn" style="width: 100%; justify-content: center;">
-            Открыть документацию API
+            Импорт папки t.me/addlist
+          </button>
+          <button class="btn-pill primary" id="btnOpenNewFolderModal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Новая папка
           </button>
         </div>
-      </aside>
-    </main>
+      </div>
+
+      <!-- Horizontal Folder Pills -->
+      <div class="folder-tabs-wrapper">
+        <div class="folder-tabs" id="folderTabsList">
+          <!-- Rendered dynamically: All channels + custom folders -->
+        </div>
+      </div>
+
+      <!-- Current Folder Info Banner -->
+      <div class="folder-active-banner" id="folderActiveBanner">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Folder Channels Grid -->
+      <div class="cards-list" id="folderCardsList">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
   </div>
 
   <!-- Channel & Posts Parser Fullscreen Modal -->
@@ -283,6 +312,82 @@ console.log(data.posts); // Массив постов (текст, дата, п�
   height="700" 
   style="border:none;border-radius:16px;"&gt;
 &lt;/iframe&gt;</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Import Folder from t.me/addlist -->
+  <div class="modal-overlay" id="addlistModal">
+    <div class="modal-content" style="max-width: 580px;">
+      <div class="modal-header">
+        <div style="font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px;">
+          <span>🔗</span>
+          <span>Импорт папки из Telegram (t.me/addlist)</span>
+        </div>
+        <button class="btn-icon" id="closeAddlistModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13.5px; color: var(--text-muted); margin-bottom: 14px;">
+          Вставь ссылку на папку (например, <code>https://t.me/addlist/UQM6EOgiI7JhM2Ni</code>). Мы определим название, количество чатов и сохраним прямую ссылку на добавление папки в Telegram.
+        </p>
+        <div class="modal-input-group" style="margin-bottom: 14px;">
+          <label style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; display: block;">Ссылка на папку Telegram:</label>
+          <input type="text" id="addlistLinkInput" class="custom-modal-input" placeholder="https://t.me/addlist/UQM6EOgiI7JhM2Ni" style="width: 100%;">
+        </div>
+        <div class="modal-input-group" style="margin-bottom: 18px;">
+          <label style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; display: block;">Добавить каналы в эту папку (необязательно, через запятую @ники или ссылки):</label>
+          <textarea id="addlistExtraHandles" class="custom-modal-input" rows="3" placeholder="@YT_cartell, @danyavoron_yt, @grishayoutuber..." style="width: 100%; resize: vertical;"></textarea>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="btn-pill" id="cancelAddlistBtn">Отмена</button>
+          <button class="btn-pill primary" id="submitAddlistBtn">Импортировать папку</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create New Custom Folder -->
+  <div class="modal-overlay" id="newFolderModal">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <div style="font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px;">
+          <span>📁</span>
+          <span>Создать новую папку</span>
+        </div>
+        <button class="btn-icon" id="closeNewFolderModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-input-group" style="margin-bottom: 16px;">
+          <label style="font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; display: block;">Название папки:</label>
+          <input type="text" id="newFolderNameInput" class="custom-modal-input" placeholder="Например: Ютуб, Крипта, Блогеры..." style="width: 100%;">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button class="btn-pill" id="cancelNewFolderBtn">Отмена</button>
+          <button class="btn-pill primary" id="submitNewFolderBtn">Создать папку</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Assign Channel to Folders -->
+  <div class="modal-overlay" id="assignFolderModal">
+    <div class="modal-content" style="max-width: 460px;">
+      <div class="modal-header">
+        <div style="font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+          <span>📁</span>
+          <span id="assignModalTitle">Папки канала</span>
+        </div>
+        <button class="btn-icon" id="closeAssignFolderModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12.5px; color: var(--text-dim); margin-bottom: 12px;">Выберите папки, в которых должен находиться этот канал:</p>
+        <div id="assignFolderCheckboxes" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; max-height: 240px; overflow-y: auto;">
+          <!-- Checkboxes rendered dynamically -->
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 14px;">
+          <button class="side-btn-text" id="assignModalCreateFolderBtn" style="color: var(--accent); font-weight: 600;">+ Создать папку</button>
+          <button class="btn-pill primary" id="saveAssignFoldersBtn">Сохранить</button>
         </div>
       </div>
     </div>
