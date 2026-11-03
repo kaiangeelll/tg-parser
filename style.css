@@ -2440,3 +2440,100 @@ html, body {
   background: radial-gradient(circle at 50% 30%, rgba(36, 129, 204, 0.03), transparent 60%), #070a0f !important;
 }
 
+
+
+/* Telegram Rich Post Formatting & Links */
+.tg-ext-link {
+  color: #38bdf8 !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  word-break: break-all;
+}
+
+.tg-ext-link:hover {
+  color: #7dd3fc !important;
+  text-decoration: underline;
+  filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.45));
+}
+
+.tg-addlist-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(41, 182, 246, 0.15);
+  border: 1px solid rgba(41, 182, 246, 0.35);
+  color: #38bdf8 !important;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  text-decoration: none !important;
+  font-weight: 600;
+  margin: 2px 0;
+  vertical-align: middle;
+}
+
+.tg-addlist-link:hover {
+  background: rgba(41, 182, 246, 0.28);
+  border-color: #38bdf8;
+  transform: translateY(-1px);
+}
+
+.tg-inline-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tg-inline-code:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.5);
+  color: #38bdf8;
+}
+
+.tg-pre-block {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  background: #090e17;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 8px 0;
+  overflow-x: auto;
+  color: #e2e8f0;
+}
+
+.tg-spoiler {
+  background: rgba(255, 255, 255, 0.14);
+  color: transparent !important;
+  border-radius: 4px;
+  padding: 0 4px;
+  cursor: pointer;
+  user-select: none;
+  filter: blur(5px);
+  transition: filter 0.2s ease, color 0.2s ease;
+}
+
+.tg-spoiler.revealed {
+  filter: none;
+  color: inherit !important;
+  user-select: text;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tg-hashtag {
+  color: #38bdf8;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tg-hashtag:hover {
+  text-decoration: underline;
+}

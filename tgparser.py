@@ -114,6 +114,58 @@ def parse_telegram_preview(handle: str, before: str | int = None, fetch_all: boo
     first_res['count'] = len(all_posts)
     return first_res
 
+def _clean_html_post_text(raw_html: str) -> str:
+    if not raw_html:
+        return ''
+    s = re.sub(r'</div>\s*</div>\s*$', '', raw_html)
+    
+    # Extract tg-emoji text
+    s = re.sub(r'<tg-emoji[^>]*>(?:<i[^>]*>[\s\S]*?</i>)?([\s\S]*?)</tg-emoji>', r'\1', s)
+    
+    # Preserve hyperlinks: <a href="URL"[^>]*>TEXT</a> -> [TEXT](URL)
+    def _link_repl(m):
+        url = m.group(1).strip()
+        text = re.sub(r'<[^>]+>', '', m.group(2)).strip()
+        if not text:
+            return url
+        if text.lower() == url.lower():
+            return url
+        return f'[{text}]({url})'
+
+    s = re.sub(r'<a\b[^>]*\bhref="([^"]+)"[^>]*>([\s\S]*?)</a>', _link_repl, s, flags=re.IGNORECASE)
+    
+    # Preserve bold: <b>TEXT</b> or <strong>TEXT</strong> -> **TEXT**
+    s = re.sub(r'<(?:b|strong)\b[^>]*>([\s\S]*?)</(?:b|strong)>', r'**\1**', s, flags=re.IGNORECASE)
+    
+    # Preserve italic: <i>TEXT</i> or <em>TEXT</em> -> *TEXT*
+    s = re.sub(r'<(?:i|em)\b[^>]*>([\s\S]*?)</(?:i|em)>', r'*\1*', s, flags=re.IGNORECASE)
+    
+    # Preserve monospace code: <code>TEXT</code> -> `TEXT`
+    s = re.sub(r'<code\b[^>]*>([\s\S]*?)</code>', r'`\1`', s, flags=re.IGNORECASE)
+    
+    # Preserve pre blocks: <pre\b[^>]*>([\s\S]*?)</pre> -> ```\nTEXT\n```
+    s = re.sub(r'<pre\b[^>]*>([\s\S]*?)</pre>', r'```\n\1\n```', s, flags=re.IGNORECASE)
+    
+    # Preserve strikethrough: <s>TEXT</s> -> ~~TEXT~~
+    s = re.sub(r'<(?:s|strike|del)\b[^>]*>([\s\S]*?)</(?:s|strike|del)>', r'~~\1~~', s, flags=re.IGNORECASE)
+    
+    # Preserve spoilers: <tg-spoiler>TEXT</tg-spoiler> or <span class="tg-spoiler">TEXT</span> -> ||TEXT||
+    s = re.sub(r'<(?:tg-spoiler|span\b[^>]*class="[^"]*tg-spoiler[^"]*")[^>]*>([\s\S]*?)</(?:tg-spoiler|span)>', r'||\1||', s, flags=re.IGNORECASE)
+    
+    # Replace <br> with \n
+    s = re.sub(r'<br\s*/?>', '\n', s, flags=re.IGNORECASE)
+    
+    # Strip any remaining tags
+    s = re.sub(r'<[^>]+>', '', s)
+    
+    # Unescape HTML entities
+    s = html.unescape(s)
+    
+    # Clean system notices
+    s = re.sub(r'(?i)(?:Please open Telegram to view this post|This media is not supported[^\n]*|Media is too big)', '', s)
+    
+    return s.strip()
+
 def _parse_html_preview(handle: str, html_doc: str) -> dict:
     title_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_header_title[^"]*"[^>]*>[\s\S]*?<span[^>]*dir="auto">([\s\S]*?)</span>', html_doc)
     title = html.unescape(re.sub(r'<[^>]+>', '', title_m.group(1))).strip() if title_m else handle
@@ -176,12 +228,7 @@ def _parse_html_preview(handle: str, html_doc: str) -> dict:
 
         text = ''
         if text_m:
-            raw_text = text_m.group(1)
-            raw_text = re.sub(r'</div>\s*</div>\s*$', '', raw_text)
-            text = html.unescape(re.sub(r'<br\s*/?>', '\n', raw_text))
-            text = re.sub(r'<tg-emoji[^>]*>(?:<i[^>]*>[\s\S]*?</i>)?(.*?)</tg-emoji>', r'\1', text)
-            text = re.sub(r'<[^>]+>', '', text).strip()
-            text = re.sub(r'(?i)(?:Please open Telegram to view this post|This media is not supported[^\n]*|Media is too big)', '', text).strip()
+            text = _clean_html_post_text(text_m.group(1))
 
         time_m = re.search(r'<time[^>]*datetime="([^"]+)"[^>]*>([\s\S]*?)</time>', clean_chunk)
         date_iso = time_m.group(1) if time_m else ''
@@ -314,9 +361,6 @@ def _parse_jina_preview(handle: str, md: str) -> dict:
         clean_text = re.sub(r'_?\*+[\s\S]*?\*+_?\s*(?:\d+[KMB]?\s*)+', '', clean_text)
         clean_text = re.sub(r'\n+\s*(?:_\*\*[^\n*]+\*\*_\s*|\d+[KMB]?\s*)+\s*$', '', clean_text)
         clean_text = re.sub(r'[\d.,]+[KMB]?\s+views.*$', '', clean_text, flags=re.MULTILINE)
-        clean_text = re.sub(r'\\([_*\[\]()~`>#+\-=|{}.!])', r'\1', clean_text)
-        clean_text = re.sub(r'\*\*(.+?)\*\*', r'\1', clean_text)
-        clean_text = re.sub(r'_(.+?)_', r'\1', clean_text)
         clean_text = re.sub(r'\n{3,}', '\n\n', clean_text).strip()
 
         posts.append({

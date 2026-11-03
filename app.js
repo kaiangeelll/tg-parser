@@ -335,11 +335,74 @@ function formatPostHtml(rawText, currentHandle, isMediaNote = false) {
     }
     return '<span style="color: var(--text-dim); font-style: italic;">[Медиа / запись без текста]</span>';
   }
-  
-  const curH = (currentHandle || '').toLowerCase().replace(/^@/, '');
-  let safe = esc(rawText);
 
-  // 1. In-app links to specific posts: https://t.me/channel/123
+  const curH = (currentHandle || '').toLowerCase().replace(/^@/, '');
+  let text = String(rawText);
+
+  // 1. Strip trailing reaction noise (e.g. _**🔥**_ 36 _**👍**_ 27)
+  text = text.replace(/(?:\s*(?:_[*]{2}[^*]+[*]{2}_|[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}])\s*[\d.,KMB]*)+\s*$/gu, '');
+  text = text.replace(/(?:\s*_[*]{2}[^*]+[*]{2}_\s*[\d.,KMB]*)+\s*$/gi, '');
+  text = text.replace(/\n+\s*(?:_\*\*[^\n*]+\*\*_\s*|\d+[KMB]?\s*)+\s*$/gi, '');
+
+  // 2. Pre-process code blocks (```code```)
+  const codeBlocks = [];
+  text = text.replace(/```([\s\S]*?)```/g, (match, code) => {
+    const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
+    codeBlocks.push(`<pre class="tg-pre-block"><code>${esc(code.trim())}</code></pre>`);
+    return placeholder;
+  });
+
+  // 3. Pre-process inline code (`code`)
+  const inlineCodes = [];
+  text = text.replace(/`([^`\n]+)`/g, (match, code) => {
+    const placeholder = `__INLINE_CODE_${inlineCodes.length}__`;
+    inlineCodes.push(`<code class="tg-inline-code" onclick="copyToClipboard('${esc(code)}', 'Скопировано!')" title="Нажмите, чтобы скопировать">${esc(code)}</code>`);
+    return placeholder;
+  });
+
+  // 4. Pre-process Markdown hyperlinks: [Anchor Text](URL)
+  const links = [];
+  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|tg:\/\/[^\s)]+)\)/gi, (match, anchor, url) => {
+    const placeholder = `__LINK_${links.length}__`;
+    const cleanUrl = url.trim();
+    const cleanAnchor = esc(anchor.trim());
+
+    // In-app jump to post: https://t.me/channel/123
+    const jumpMatch = cleanUrl.match(/^https?:\/\/t\.me\/([A-Za-z0-9_]+)\/(\d+)$/i);
+    if (jumpMatch) {
+      const ch = jumpMatch[1];
+      const pid = jumpMatch[2];
+      if (ch.toLowerCase() === curH) {
+        links.push(`<a href="#post-bubble-${pid}" class="tg-inapp-jump" data-jump-post="${pid}">💬 ${cleanAnchor}</a>`);
+      } else {
+        links.push(`<a href="#" class="tg-inapp-channel" data-open-channel="${ch}" data-open-post="${pid}">↗ ${cleanAnchor} (@${ch} #${pid})</a>`);
+      }
+      return placeholder;
+    }
+
+    // In-app addlist link: https://t.me/addlist/...
+    if (/addlist\//i.test(cleanUrl)) {
+      links.push(`<a href="${cleanUrl}" target="_blank" rel="noopener" class="tg-ext-link tg-addlist-link" title="Папка Telegram">📁 ${cleanAnchor} ↗</a>`);
+      return placeholder;
+    }
+
+    // In-app channel link: https://t.me/channel
+    const channelMatch = cleanUrl.match(/^https?:\/\/t\.me\/([A-Za-z0-9_]{3,32})$/i);
+    if (channelMatch && channelMatch[1].toLowerCase() !== 's') {
+      const ch = channelMatch[1];
+      links.push(`<a href="#" class="tg-inapp-channel" data-open-channel="${ch}">↗ ${cleanAnchor}</a>`);
+      return placeholder;
+    }
+
+    // External link
+    links.push(`<a href="${cleanUrl}" target="_blank" rel="noopener" class="tg-ext-link">${cleanAnchor} <span style="font-size:11px;opacity:0.8;">↗</span></a>`);
+    return placeholder;
+  });
+
+  // 5. Escape HTML in the remaining text
+  let safe = esc(text);
+
+  // 6. Raw In-app links to specific posts: https://t.me/channel/123
   safe = safe.replace(/https?:\/\/t\.me\/([A-Za-z0-9_]+)\/(\d+)/gi, (match, ch, pid) => {
     if (ch.toLowerCase() === curH) {
       return `<a href="#post-bubble-${pid}" class="tg-inapp-jump" data-jump-post="${pid}">💬 Сообщение #${pid}</a>`;
@@ -348,31 +411,60 @@ function formatPostHtml(rawText, currentHandle, isMediaNote = false) {
     }
   });
 
-  // 2. In-app links to channels: https://t.me/channel
+  // 7. Raw in-app links to folders: https://t.me/addlist/slug
+  safe = safe.replace(/https?:\/\/t\.me\/addlist\/([A-Za-z0-9_-]+)/gi, (match, slug) => {
+    return `<a href="${match}" target="_blank" rel="noopener" class="tg-ext-link tg-addlist-link">📁 Папка t.me/addlist/${slug} ↗</a>`;
+  });
+
+  // 8. Raw in-app links to channels: https://t.me/channel
   safe = safe.replace(/https?:\/\/t\.me\/([A-Za-z0-9_]{3,32})(?![/\w])/gi, (match, ch) => {
     if (ch.toLowerCase() === 's') return match;
     return `<a href="#" class="tg-inapp-channel" data-open-channel="${ch}">↗ @${ch}</a>`;
   });
 
-  // 3. User mentions: @channel
-  safe = safe.replace(/(^|[^A-Za-z0-9_])@([A-Za-z0-9_]{4,32})/gi, (match, prefix, ch) => {
+  // 9. User mentions: @channel
+  safe = safe.replace(/(^|[^A-Za-z0-9_])@([A-Za-z0-9_]{3,32})/gi, (match, prefix, ch) => {
     return `${prefix}<a href="#" class="tg-inapp-channel" data-open-channel="${ch}">@${ch}</a>`;
   });
 
-  // 4. Regular external web links
-  safe = safe.replace(/(https?:\/\/(?!t\.me\/)[^\s<>"']+)/gi, (match) => {
-    return `<a href="${match}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline;">${match}</a>`;
+  // 10. Hashtags: #hashtag
+  safe = safe.replace(/(^|[\s(])#([A-Za-zА-Яа-я0-9_]+)/gu, (match, prefix, tag) => {
+    return `${prefix}<span class="tg-hashtag">#${tag}</span>`;
   });
 
-  // Strip trailing reaction lines (e.g. _**🔥**_ 36 _**👍**_ 27 or 🔥 36 👍 28)
-  safe = safe.replace(/(?:\s*(?:_[*]{2}[^*]+[*]{2}_|[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}])\s*[\d.,KMB]*)+\s*$/gu, '');
-  safe = safe.replace(/(?:\s*_[*]{2}[^*]+[*]{2}_\s*[\d.,KMB]*)+\s*$/gi, '');
-  safe = safe.replace(/\n+\s*(?:_\*\*[^\n*]+\*\*_\s*|\d+[KMB]?\s*)+\s*$/gi, '');
+  // 11. Raw external web links: https://...
+  safe = safe.replace(/(https?:\/\/(?!t\.me\/)[^\s<>"']+)/gi, (match) => {
+    return `<a href="${match}" target="_blank" rel="noopener" class="tg-ext-link">${match}</a>`;
+  });
+
+  // 12. Markdown Formatting: Bold (**text**), Italic (*text* or _text_), Strikethrough (~~text~~), Spoilers (||text||)
+  safe = safe.replace(/\*\*([^\*\n]+)\*\*/g, '<strong>$1</strong>');
+  safe = safe.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+  safe = safe.replace(/\|\|([^|\n]+)\|\|/g, '<span class="tg-spoiler" onclick="this.classList.toggle(\'revealed\')" title="Нажмите, чтобы показать">$1</span>');
+  safe = safe.replace(/(^|[^\w*])\*([^\*\n]+)\*([^\w*]|$)/g, '$1<em>$2</em>$3');
+  safe = safe.replace(/(^|[^\w_])_([^_\n]+)_([^\w_]|$)/g, '$1<em>$2</em>$3');
+
+  // 13. Restore Markdown Links
+  links.forEach((lHtml, idx) => {
+    safe = safe.replace(`__LINK_${idx}__`, lHtml);
+  });
+
+  // 14. Restore Inline Codes
+  inlineCodes.forEach((cHtml, idx) => {
+    safe = safe.replace(`__INLINE_CODE_${idx}__`, cHtml);
+  });
+
+  // 15. Restore Code Blocks
+  codeBlocks.forEach((bHtml, idx) => {
+    safe = safe.replace(`__CODE_BLOCK_${idx}__`, bHtml);
+  });
+
+  // 16. Preserve Line Breaks
+  safe = safe.replace(/\n/g, '<br>');
 
   return safe.trim();
 }
 
-// Normalize channel record
 function normalizeChannel(raw) {
   const handleRaw = raw.handle || raw.slug || '';
   const cleanHandle = String(handleRaw).replace(/^@/, '').replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, '').trim();
@@ -879,14 +971,16 @@ async function openChannelInWorkspace(channelId, autoScroll = true) {
     }
 
     if (data.posts && data.posts.length) {
-      const existingIds = new Set(currentPostsData.map(p => String(p.id)));
+      const postMap = new Map();
+      currentPostsData.forEach(p => postMap.set(String(p.id), p));
       let added = 0;
       data.posts.forEach(p => {
-        if (!existingIds.has(String(p.id))) {
-          currentPostsData.push(p);
-          added++;
-        }
+        const sid = String(p.id);
+        if (!postMap.has(sid)) added++;
+        postMap.set(sid, Object.assign({}, postMap.get(sid) || {}, p));
       });
+      currentPostsData = Array.from(postMap.values());
+      currentPostsData.sort((a, b) => (parseInt(a.id, 10) || 0) - (parseInt(b.id, 10) || 0));
 
       saveCachedPosts(channel.cleanHandle, currentPostsData);
       renderWorkspacePosts(false);
@@ -1601,15 +1695,18 @@ async function refreshChannelPosts() {
     }
 
     if (data.posts && data.posts.length) {
-      const existingIds = new Set(currentPostsData.map(p => String(p.id)));
+      const postMap = new Map();
+      currentPostsData.forEach(p => postMap.set(String(p.id), p));
       let added = 0;
       data.posts.forEach(np => {
-        if (!existingIds.has(String(np.id))) {
-          currentPostsData.push(np);
-          added++;
-        }
+        const sid = String(np.id);
+        if (!postMap.has(sid)) added++;
+        postMap.set(sid, Object.assign({}, postMap.get(sid) || {}, np));
       });
-      renderPosts();
+      currentPostsData = Array.from(postMap.values());
+      currentPostsData.sort((a, b) => (parseInt(a.id, 10) || 0) - (parseInt(b.id, 10) || 0));
+      saveCachedPosts(currentChannelData.cleanHandle, currentPostsData);
+      renderWorkspacePosts(false);
       notify(added > 0 ? `Обновлено! Добавлено ${added} новых постов` : 'Лента проверена: вы видите самые свежие посты');
     } else {
       notify('Лента проверена: новых постов нет');
