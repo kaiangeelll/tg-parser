@@ -549,6 +549,12 @@ function renderFoldersView() {
     };
   }
 
+  // Auto-clean and auto-sync if addlist folder has stale/random channels or hasn't synced
+  if (folder.source === 'addlist' && (list.some(c => c.id === 'yutub' || c.id === 'grishayoutube') || (!folder._autoSynced && list.length < 5))) {
+    folder._autoSynced = true;
+    setTimeout(() => syncAddlistFolder(folder.id), 100);
+  }
+
   if (!list.length) {
     if (folder.source === 'addlist' && !folder._autoSynced) {
       folder._autoSynced = true;
@@ -772,6 +778,20 @@ async function syncAddlistFolder(folderId) {
     folder.url = data.url || folder.url;
     folder.slug = data.slug || folder.slug;
 
+    const validServerIds = new Set(
+      (data.channels || []).map(ch => (ch.handle || ch.slug || ch.id || '').toLowerCase().replace(/^@/, ''))
+    );
+
+    // Remove any stale/random channels from this folder that are not in the real folder list
+    if (validServerIds.size > 0) {
+      savedChannels.forEach(c => {
+        if ((c.folderIds || []).includes(folder.id) && !validServerIds.has(c.id)) {
+          c.folderIds = c.folderIds.filter(id => id !== folder.id);
+          if (!c.folderIds.length) c.folderIds = ['all'];
+        }
+      });
+    }
+
     let addedCount = 0;
     if (data.channels && Array.isArray(data.channels) && data.channels.length > 0) {
       data.channels.forEach(ch => {
@@ -788,10 +808,11 @@ async function syncAddlistFolder(folderId) {
             existingSaved.folderIds.push(folder.id);
             addedCount++;
           }
-          if (!existingSaved.avatar && norm.avatar) existingSaved.avatar = norm.avatar;
-          if ((!existingSaved.name || existingSaved.name === existingSaved.cleanHandle) && norm.name) {
-            existingSaved.name = norm.name;
-          }
+          if (norm.avatar) existingSaved.avatar = norm.avatar;
+          if (norm.name) existingSaved.name = norm.name;
+          if (norm.count != null) existingSaved.count = norm.count;
+          if (norm.memberCount != null) existingSaved.count = norm.memberCount;
+          if (norm.description) existingSaved.description = norm.description;
         } else {
           savedChannels.unshift(norm);
           addedCount++;

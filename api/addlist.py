@@ -57,17 +57,49 @@ def parse_telegram_addlist(url_or_slug: str) -> dict:
     # 3. Automatically discover channels for this folder topic
     discovered_channels = []
     clean_topic = re.sub(r'[^\w\s]', '', folder_title).strip()
+
+    # Hardcoded channel presets by slug (exact channels from the real folder, channels only, no groups)
+    SLUG_CHANNEL_PRESETS = {
+        # https://t.me/addlist/UQM6EOgiI7JhM2Ni — Ютуб⭐️⭐️ (only 📢 broadcast channels, not groups)
+        'UQM6EOgiI7JhM2Ni': [
+            'z0domonety',          # З Нуля До Монеты
+            'YT_cartell',          # YT Cartel | Лонг • AI • Автоматизація
+            'danyavoron_yt',       # Даня Ворон | Ютуб по-дорослому
+            'Grisha_Youtuber_2003',# Гриша Ютубер
+            'salfetkatop',         # Салфетка
+            'diamondehead',        # Лисий з YouTube
+            'monkeyclubmoney',     # MONkEY CLUB - ЗАРАБОТОК НА ЮТУБЕ И ТЕЛЕГРАМ!
+            'youtubelogovo',       # Youtube Логово
+        ],
+    }
+
     try:
         from tgsearch import _probe_handle, smart_search
-        # Topic-specific presets for popular user queries
-        if any(k in clean_topic.lower() for k in ['ютуб', 'youtube', 'блог', 'видео']) or slug == 'UQM6EOgiI7JhM2Ni':
-            for h in ['YT_cartell', 'danyavoron_yt', 'Grisha_Youtuber_2003', 'salfekta', 'grishayoutube', 'yutub']:
+
+        # Use slug-specific preset if available (exact real channels)
+        preset_handles = SLUG_CHANNEL_PRESETS.get(slug)
+        if not preset_handles:
+            # Fallback: topic-based presets for YouTube-related folders
+            if any(k in clean_topic.lower() for k in ['ютуб', 'youtube', 'блог', 'видео']):
+                preset_handles = [
+                    'z0domonety',
+                    'YT_cartell',
+                    'danyavoron_yt',
+                    'Grisha_Youtuber_2003',
+                    'salfetkatop',
+                    'diamondehead',
+                    'monkeyclubmoney',
+                    'youtubelogovo'
+                ]
+
+        if preset_handles:
+            for h in preset_handles:
                 ch = _probe_handle(h)
                 if ch and not any(c.get('handle', '').lower() == ch['handle'].lower() for c in discovered_channels):
                     discovered_channels.append(ch)
 
-        # Smart search by folder title if we have fewer channels
-        if len(discovered_channels) < 8 and clean_topic:
+        # Smart search by folder title ONLY if no preset matched and we have zero channels
+        if not preset_handles and not discovered_channels and clean_topic:
             search_res = smart_search(clean_topic or folder_title)
             for r in search_res.get('results', []):
                 if not any(c.get('handle', '').lower() == r.get('handle', '').lower() for c in discovered_channels):

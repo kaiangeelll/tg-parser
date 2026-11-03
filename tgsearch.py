@@ -198,7 +198,7 @@ def _probe_direct_html(handle: str, timeout: int = 3) -> dict | None:
 
             # Title
             t_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_header_title[^"]*"[^>]*>[\s\S]*?<span[^>]*dir="auto">([\s\S]*?)</span>', html_doc)
-            title = re.sub(r'<[^>]+>', '', t_m.group(1)).strip() if t_m else handle
+            title = html.unescape(re.sub(r'<[^>]+>', '', t_m.group(1)).strip()) if t_m else handle
 
             # Avatar (can be inside <i class="tgme_page_photo_image"> or <div class="tgme_page_photo">)
             a_m = re.search(r'class="[^"]*tgme_page_photo[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]+)"', html_doc)
@@ -223,7 +223,7 @@ def _probe_direct_html(handle: str, timeout: int = 3) -> dict | None:
 
             # Description
             d_m = re.search(r'<div[^>]*class="[^"]*tgme_channel_info_description[^"]*"[^>]*>([\s\S]*?)</div>', html_doc)
-            desc = re.sub(r'<[^>]+>', '', d_m.group(1)).strip() if d_m else ''
+            desc = html.unescape(re.sub(r'<[^>]+>', '', d_m.group(1)).strip()) if d_m else ''
 
             return {
                 'handle': handle,
