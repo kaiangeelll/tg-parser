@@ -1772,106 +1772,191 @@ function closeModal() {
 // Event Listeners Setup
 
 // Sidebar Global Channel Search & Direct Subscribe
-async function executeSidebarSearch() {
+
+// Global Search State for Sidebar
+let globalSearchResults = null;
+let isSearchingGlobal = false;
+let sidebarSearchTimeout = null;
+
+// Trigger Sidebar Global Search (Debounced & Immediate)
+async function triggerSidebarGlobalSearch(queryText = '') {
   const input = $('#tgSidebarSearchInput');
-  const dropdown = $('#tgSidebarSearchResults');
-  if (!input || !dropdown) return;
+  const query = (queryText || (input ? input.value : '')).trim();
+  const clearBtn = $('#btnSidebarSearchClear');
 
-  const q = input.value.trim();
-  if (!q) {
-    dropdown.style.display = 'none';
+  if (!query) {
+    if (clearBtn) clearBtn.style.display = 'none';
+    globalSearchResults = null;
+    isSearchingGlobal = false;
+    sidebarFilterText = '';
+    renderFoldersView();
     return;
   }
 
-  if (/addlist\//i.test(q) || /t\.me\/addlist/i.test(q)) {
-    dropdown.style.display = 'none';
-    await importTelegramAddlist(q);
+  if (clearBtn) clearBtn.style.display = 'inline-flex';
+  sidebarFilterText = query;
+
+  // Telegram addlist link detection
+  if (/addlist\//i.test(query) || /t\.me\/addlist/i.test(query)) {
+    await importTelegramAddlist(query);
+    if (input) input.value = '';
+    if (clearBtn) clearBtn.style.display = 'none';
     return;
   }
 
-  dropdown.style.display = 'flex';
-  dropdown.innerHTML = `
-    <div style="padding: 10px; text-align: center; color: var(--text-muted); font-size: 12px;">
-      ⏳ Поиск «${esc(q)}» в Telegram...
+  // 1. Immediately render local matches + searching indicator
+  const qLower = query.toLowerCase();
+  const localMatches = savedChannels.filter(c => 
+    (c.name || '').toLowerCase().includes(qLower) || 
+    (c.handle || '').toLowerCase().includes(qLower) ||
+    (c.cleanHandle || '').toLowerCase().includes(qLower) ||
+    (c.description || '').toLowerCase().includes(qLower)
+  );
+
+  isSearchingGlobal = true;
+  renderSidebarSearchResults(localMatches, null, query);
+
+  // 2. Fetch global results from Telegram
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    globalSearchResults = data.results || [];
+  } catch (err) {
+    console.warn('Global search error:', err);
+    globalSearchResults = [];
+  } finally {
+    isSearchingGlobal = false;
+    renderSidebarSearchResults(localMatches, globalSearchResults, query);
+  }
+}
+
+// Render Search Results directly inside Sidebar Channel List
+function renderSidebarSearchResults(localMatches, globalResults, query) {
+  const listEl = $('#tgSidebarChannelList');
+  if (!listEl) return;
+
+  let html = '';
+
+  // 1. Local Matches Section
+  if (localMatches && localMatches.length > 0) {
+    html += `
+      <div class="tg-sidebar-section-title">
+        <span>В моих каналах</span>
+        <span>${localMatches.length}</span>
+      </div>
+    `;
+
+    localMatches.forEach(c => {
+      const initial = (c.name || c.cleanHandle || '?')[0].toUpperCase();
+      const avatarHtml = c.avatar 
+        ? `<img src="${esc(c.avatar)}" alt="" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">` 
+        : initial;
+      const isActive = c.id === activeWorkspaceChannelId;
+
+      html += `
+        <div class="tg-sidebar-item ${isActive ? 'active' : ''}" data-sidebar-ch-id="${esc(c.id)}">
+          <div class="tg-sidebar-item-avatar">
+            ${avatarHtml}
+          </div>
+          <div class="tg-sidebar-item-info">
+            <div class="tg-sidebar-item-name">${esc(c.name)}</div>
+            <div class="tg-sidebar-item-meta">${esc(c.handle)} ${c.count != null ? '• ' + formatSubs(c.count) : ''}</div>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  // 2. Global Telegram Search Results Section
+  html += `
+    <div class="tg-sidebar-section-title" style="margin-top: 12px;">
+      <span>Глобальный поиск в Telegram</span>
+      <span>${globalResults ? globalResults.length : '...'}</span>
     </div>
   `;
 
-  try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    const results = (data.results || []).slice(0, 6);
-
-    if (!results.length) {
-      const cleanH = q.replace(/^@/, '').replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, '').trim();
-      dropdown.innerHTML = `
-        <div style="padding: 8px 10px; font-size: 12px; color: var(--text-dim); text-align: center;">
-          Канал не найден в базе.
-          <button class="btn-pill primary" id="btnSidebarDirectAdd" style="margin-top: 6px; width: 100%; justify-content: center; font-size: 11.5px;">
-            ⚡ Проверить @${esc(cleanH)}
-          </button>
-        </div>
-      `;
-      const directBtn = $('#btnSidebarDirectAdd');
-      if (directBtn) {
-        directBtn.onclick = async () => {
-          dropdown.style.display = 'none';
-          input.value = '';
-          await fetchSingleChannel(cleanH);
-        };
-      }
-      return;
-    }
-
-    dropdown.innerHTML = results.map(r => {
+  if (isSearchingGlobal && globalResults === null) {
+    html += `
+      <div style="padding: 24px 16px; text-align: center; color: var(--text-dim); font-size: 12.5px;">
+        <div style="font-size: 20px; margin-bottom: 6px;" class="spinning">⏳</div>
+        <div>Ищем каналы в Telegram по «${esc(query)}»...</div>
+      </div>
+    `;
+  } else if (!globalResults || !globalResults.length) {
+    const cleanQ = query.replace(/^@/, '').replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, '').trim();
+    html += `
+      <div style="padding: 18px 14px; text-align: center; color: var(--text-dim); font-size: 12.5px;">
+        <div>По запросу ничего не найдено в общей базе.</div>
+        <button class="btn-pill primary" id="btnSidebarDirectCheck" style="margin-top: 8px; width: 100%; justify-content: center; font-size: 11.5px;">
+          ⚡ Проверить прямой ник @${esc(cleanQ)}
+        </button>
+      </div>
+    `;
+  } else {
+    globalResults.forEach(r => {
       const initial = (r.name || r.cleanHandle || '?')[0].toUpperCase();
       const avHtml = r.avatar 
-        ? `<img src="${esc(r.avatar)}" style="width:100%;height:100%;object-fit:cover;">` 
+        ? `<img src="${esc(r.avatar)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'; this.parentElement.innerText='${initial}';">` 
         : initial;
+      const isAlreadySaved = savedChannels.some(c => c.id === r.id || c.cleanHandle.toLowerCase() === (r.cleanHandle || '').toLowerCase());
 
-      return `
-        <div class="sidebar-search-item" style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.03);gap:8px;">
-          <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-            <div style="width:28px;height:28px;border-radius:50%;overflow:hidden;background:#242f3d;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;">
+      html += `
+        <div class="tg-sidebar-item tg-global-search-item" data-global-ch-handle="${esc(r.cleanHandle || r.handle)}" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
+            <div class="tg-sidebar-item-avatar">
               ${avHtml}
             </div>
-            <div style="min-width:0;">
-              <div style="font-size:12px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:115px;">${esc(r.name || r.handle)}</div>
-              <div style="font-size:10.5px;color:var(--text-dim);">${esc(r.handle)} ${r.count != null ? '• ' + formatSubs(r.count) : ''}</div>
+            <div class="tg-sidebar-item-info">
+              <div class="tg-sidebar-item-name">${esc(r.name || r.handle)}</div>
+              <div class="tg-sidebar-item-meta">${esc(r.handle)} ${r.count != null ? '• ' + formatSubs(r.count) : ''}</div>
             </div>
           </div>
-          <button class="btn-pill primary btn-quick-sub" data-sub-handle="${esc(r.cleanHandle || r.handle)}" style="padding:3px 7px;font-size:11px;white-space:nowrap;">
-            + Добавить
+          <button class="btn-pill ${isAlreadySaved ? '' : 'primary'} btn-sidebar-quick-add" data-handle="${esc(r.cleanHandle || r.handle)}" style="padding:4px 9px; font-size:11px; flex-shrink:0;">
+            ${isAlreadySaved ? 'В списке' : '+ В папку'}
           </button>
         </div>
       `;
-    }).join('');
-
-    $$('.btn-quick-sub').forEach(b => {
-      b.onclick = (e) => {
-        e.stopPropagation();
-        const handle = b.dataset.subHandle;
-        const norm = normalizeChannel({ handle, name: handle });
-        if (!norm.folderIds) norm.folderIds = ['all'];
-        if (activeFolderId && activeFolderId !== 'all') {
-          if (!norm.folderIds.includes(activeFolderId)) norm.folderIds.push(activeFolderId);
-        }
-        catalog.set(norm.id, norm);
-        if (!savedChannels.some(c => c.id === norm.id)) {
-          savedChannels.unshift(norm);
-        }
-        saveFolders();
-        dropdown.style.display = 'none';
-        input.value = '';
-        sidebarFilterText = '';
-        renderFoldersView();
-        openChannelInWorkspace(norm.id);
-        notify(`✅ Канал @${norm.cleanHandle} добавлен!`);
-      };
     });
-  } catch (err) {
-    dropdown.innerHTML = `<div style="padding:8px;font-size:12px;color:#ff5252;text-align:center;">Ошибка поиска: ${esc(err.message)}</div>`;
   }
+
+  listEl.innerHTML = html;
+
+  // Bind local clicks
+  $$('#tgSidebarChannelList .tg-sidebar-item[data-sidebar-ch-id]').forEach(el => {
+    el.onclick = () => {
+      openChannelInWorkspace(el.dataset.sidebarChId);
+    };
+  });
+
+  // Bind direct check button
+  const directBtn = $('#btnSidebarDirectCheck');
+  if (directBtn) {
+    directBtn.onclick = async () => {
+      const cleanH = query.replace(/^@/, '').replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, '').trim();
+      await fetchSingleChannel(cleanH);
+    };
+  }
+
+  // Bind global channel click / add
+  $$('#tgSidebarChannelList .tg-global-search-item').forEach(el => {
+    el.onclick = (e) => {
+      const handle = el.dataset.globalChHandle;
+      const norm = normalizeChannel({ handle, name: handle });
+      if (!norm.folderIds) norm.folderIds = ['all'];
+      if (activeFolderId && activeFolderId !== 'all') {
+        if (!norm.folderIds.includes(activeFolderId)) norm.folderIds.push(activeFolderId);
+      }
+      catalog.set(norm.id, norm);
+      if (!savedChannels.some(c => c.id === norm.id)) {
+        savedChannels.unshift(norm);
+      }
+      saveFolders();
+      openChannelInWorkspace(norm.id);
+      notify(`Канал @${norm.cleanHandle} открыт!`);
+    };
+  });
 }
+
 
 function initEvents() {
   $('#searchBtn').onclick = () => performSearch();
@@ -2333,14 +2418,86 @@ function initEvents() {
 }
 
 // Initial load
+// Unified Application Initial Load
 async function init() {
   initEvents();
-  updateBadges();
   renderFolderTabs();
-  
-  const initialTopic = INITIAL_PROMPTS[Math.floor(Math.random() * INITIAL_PROMPTS.length)];
-  $('#searchInput').value = initialTopic;
-  await performSearch(initialTopic);
+  renderFoldersView();
+
+  // Category tags in sidebar
+  $$('#sidebarCategoryTags .cat-pill').forEach(pill => {
+    pill.onclick = () => {
+      $$('#sidebarCategoryTags .cat-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      const cat = pill.dataset.cat;
+      const input = $('#tgSidebarSearchInput');
+      if (cat === 'all') {
+        if (input) input.value = '';
+        triggerSidebarGlobalSearch('');
+      } else {
+        const topicMap = {
+          'youtube': 'Ютуб',
+          'news': 'Новости',
+          'tech': 'Технологии',
+          'crypto': 'Крипта',
+          'business': 'Бизнес',
+          'design': 'Дизайн'
+        };
+        const topic = topicMap[cat] || cat;
+        if (input) input.value = topic;
+        triggerSidebarGlobalSearch(topic);
+      }
+    };
+  });
+
+  // Clear search button in sidebar
+  const clearBtn = $('#btnSidebarSearchClear');
+  if (clearBtn) {
+    clearBtn.onclick = () => {
+      const input = $('#tgSidebarSearchInput');
+      if (input) input.value = '';
+      clearBtn.style.display = 'none';
+      $$('#sidebarCategoryTags .cat-pill').forEach(p => p.classList.remove('active'));
+      $('#sidebarCategoryTags .cat-pill[data-cat="all"]')?.classList.add('active');
+      triggerSidebarGlobalSearch('');
+    };
+  }
+
+  // Sidebar search input debounced listener
+  const sbInput = $('#tgSidebarSearchInput');
+  if (sbInput) {
+    sbInput.addEventListener('input', e => {
+      const val = e.target.value;
+      clearTimeout(sidebarSearchTimeout);
+      if (!val.trim()) {
+        triggerSidebarGlobalSearch('');
+      } else {
+        sidebarSearchTimeout = setTimeout(() => {
+          triggerSidebarGlobalSearch(val);
+        }, 280);
+      }
+    });
+
+    sbInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        clearTimeout(sidebarSearchTimeout);
+        triggerSidebarGlobalSearch(sbInput.value);
+      }
+    });
+  }
+
+  // Sidebar search go button
+  if ($('#btnSidebarSearchGo')) {
+    $('#btnSidebarSearchGo').onclick = () => {
+      const input = $('#tgSidebarSearchInput');
+      if (input) triggerSidebarGlobalSearch(input.value);
+    };
+  }
+
+  // Auto-open first channel in workspace on load (0ms from cache)
+  if (savedChannels.length > 0) {
+    openChannelInWorkspace(savedChannels[0].id);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);
