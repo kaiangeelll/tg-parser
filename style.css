@@ -2344,3 +2344,99 @@ html, body {
   line-height: 1.5;
 }
 
+
+
+/* Critical Fix: Sidebar Top Actions & Layout */
+.tg-sidebar-brand-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  width: 100% !important;
+}
+
+.tg-sidebar-brand {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-shrink: 0 !important;
+}
+
+.tg-sidebar-top-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 4px !important;
+  flex-shrink: 0 !important;
+}
+
+.btn-glass-icon {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  border-radius: 7px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-muted) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease !important;
+  padding: 0 !important;
+}
+.btn-glass-icon:hover {
+  background: rgba(41, 182, 246, 0.18) !important;
+  color: var(--tg-cyan) !important;
+  border-color: rgba(41, 182, 246, 0.35) !important;
+}
+
+.tg-sidebar-folders-bar {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 8px 12px !important;
+  overflow-x: auto !important;
+  scrollbar-width: none !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07) !important;
+  background: rgba(255, 255, 255, 0.015) !important;
+  flex-shrink: 0 !important;
+  min-height: 42px !important;
+}
+
+.tg-sidebar-channel-list {
+  flex: 1 1 0% !important;
+  overflow-y: auto !important;
+  padding: 8px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  min-height: 0 !important;
+}
+
+.tg-chat-main {
+  flex: 1 1 0% !important;
+  min-width: 0 !important;
+  height: 100vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background: #070a0f !important;
+  position: relative !important;
+}
+
+.modal-chat-body {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  padding: 20px 24px 30px !important;
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  scroll-behavior: smooth !important;
+  background: radial-gradient(circle at 50% 30%, rgba(36, 129, 204, 0.03), transparent 60%), #070a0f !important;
+}
+

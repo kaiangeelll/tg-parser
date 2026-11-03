@@ -6,6 +6,50 @@ const $$ = (s) => document.querySelectorAll(s);
 let catalog = new Map();
 let currentResults = [];
 let savedChannels = JSON.parse(localStorage.getItem('tg_saved_channels') || '[]');
+
+// Ensure default channels exist if empty
+if (!savedChannels || !savedChannels.length) {
+  savedChannels = [
+    {
+      id: 'z0domonety',
+      cleanHandle: 'z0domonety',
+      handle: '@z0domonety',
+      name: 'З Нуля До Монеты',
+      count: 28400,
+      description: 'Авторский блог про YouTube, монетизацию и создание контента.',
+      folderIds: ['all', 'favorites']
+    },
+    {
+      id: 'yt_cartell',
+      cleanHandle: 'YT_cartell',
+      handle: '@YT_cartell',
+      name: 'YT Cartel | Лонг • AI • Автоматизація',
+      count: 1540,
+      description: 'YouTube • AI • Автоматизація. Корисні фішки та інструменти.',
+      folderIds: ['all']
+    },
+    {
+      id: 'danyavoron_yt',
+      cleanHandle: 'danyavoron_yt',
+      handle: '@danyavoron_yt',
+      name: 'Даня Ворон | Ютуб по-дорослому',
+      count: 3200,
+      description: 'Все про ведення YouTube-каналів та монетизацію.',
+      folderIds: ['all']
+    },
+    {
+      id: 'salfetkatop',
+      cleanHandle: 'salfetkatop',
+      handle: '@salfetkatop',
+      name: 'Салфетка',
+      count: 5100,
+      description: 'YouTube кейси та лайфхаки.',
+      folderIds: ['all']
+    }
+  ];
+  localStorage.setItem('tg_saved_channels', JSON.stringify(savedChannels));
+}
+
 let activeType = 'channel';
 let activeCat = 'all';
 let currentQuery = '';
@@ -1778,6 +1822,11 @@ let globalSearchResults = null;
 let isSearchingGlobal = false;
 let sidebarSearchTimeout = null;
 
+function executeSidebarSearch() {
+  const input = $('#tgSidebarSearchInput');
+  if (input) triggerSidebarGlobalSearch(input.value);
+}
+
 // Trigger Sidebar Global Search (Debounced & Immediate)
 async function triggerSidebarGlobalSearch(queryText = '') {
   const input = $('#tgSidebarSearchInput');
@@ -2171,26 +2220,7 @@ function initEvents() {
 
   
   // --- Telegram Workspace Event Listeners ---
-  // Sidebar Search
-  const sbSearchInput = $('#tgSidebarSearchInput');
-  if (sbSearchInput) {
-    sbSearchInput.addEventListener('input', e => {
-      sidebarFilterText = e.target.value.trim();
-      if (!sidebarFilterText && $('#tgSidebarSearchResults')) {
-        $('#tgSidebarSearchResults').style.display = 'none';
-      }
-      renderFoldersView();
-    });
-    sbSearchInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') {
-        executeSidebarSearch();
-      }
-    });
-  }
-
-  if ($('#btnSidebarSearchGo')) {
-    $('#btnSidebarSearchGo').onclick = executeSidebarSearch;
-  }
+  // (Search listeners are unified in init())
 
   // Sidebar header actions
   if ($('#btnSidebarAddlist')) $('#btnSidebarAddlist').onclick = openAddlist;
