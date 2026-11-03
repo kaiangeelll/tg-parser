@@ -300,7 +300,9 @@ def _probe_handle_via_jina(handle: str, timeout: int = 7) -> dict | None:
             pass
 
     # Extract avatar
-    avatar_match = re.search(r'\[_?!\[Image \d+\]\((https?://[^\)]+)\)_?\]\(https?://t\.me/', text)
+    avatar_match = re.search(r'\[_?!\[Image \d+\]\((https?://[^\)]+)\)_?\]\(https?://(?:t|telegram)\.me/', text)
+    if not avatar_match:
+        avatar_match = re.search(r'!\[Image \d+\]\((https?://cdn\d*\.telesco\.pe/[^\)]+)\)', text)
     avatar = avatar_match.group(1) if avatar_match else None
     if avatar:
         avatar = re.sub(r'\\([_\-])', r'\1', avatar)

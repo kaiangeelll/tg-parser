@@ -134,7 +134,8 @@ function formatPostHtml(rawText, currentHandle, isMediaNote = false) {
     return `<a href="${match}" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline;">${match}</a>`;
   });
 
-  // Strip trailing reaction lines (e.g. _**🔥**_ 36 _**👍**_ 27)
+  // Strip trailing reaction lines (e.g. _**🔥**_ 36 _**👍**_ 27 or 🔥 36 👍 28)
+  safe = safe.replace(/(?:\s*(?:_[*]{2}[^*]+[*]{2}_|[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}])\s*[\d.,KMB]*)+\s*$/gu, '');
   safe = safe.replace(/(?:\s*_[*]{2}[^*]+[*]{2}_\s*[\d.,KMB]*)+\s*$/gi, '');
   safe = safe.replace(/\n+\s*(?:_\*\*[^\n*]+\*\*_\s*|\d+[KMB]?\s*)+\s*$/gi, '');
 
@@ -389,6 +390,11 @@ function renderFoldersView() {
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       <input type="text" id="folderChannelSearchInput" placeholder="Поиск в этой папке..." value="${esc(filterInFolderText)}">
     </div>
+    ${(folder.source === 'addlist' || folder.slug) ? `
+      <button class="btn-pill" id="btnSyncFolderAddlist" title="Загрузить или обновить каналы из этой Telegram папки">
+        ⚡ Загрузить из TG
+      </button>
+    ` : ''}
     ${tgLinkBtn}
   `;
 
@@ -400,21 +406,105 @@ function renderFoldersView() {
   }
 
   banner.innerHTML = `
-    <div class="folder-banner-left">
-      <div class="folder-banner-title-row">
-        <span style="font-size: 24px;">${esc(folder.icon || '📁')}</span>
-        <span class="folder-banner-title">${esc(folder.name)}</span>
-        ${folder.source === 'addlist' ? '<span class="channel-cat-pill" style="color:var(--tg-cyan);border-color:rgba(41,182,246,0.3);background:rgba(41,182,246,0.08);">🔗 Telegram Addlist</span>' : ''}
+    <div class="folder-banner-top">
+      <div class="folder-banner-left">
+        <div class="folder-banner-title-row">
+          <span style="font-size: 24px;">${esc(folder.icon || '📁')}</span>
+          <span class="folder-banner-title">${esc(folder.name)}</span>
+          ${folder.source === 'addlist' ? '<span class="channel-cat-pill" style="color:var(--tg-cyan);border-color:rgba(41,182,246,0.3);background:rgba(41,182,246,0.08);">🔗 Telegram Addlist</span>' : ''}
+        </div>
+        <div class="folder-banner-meta">
+          <span>Каналов сохранено: <b>${list.length}</b></span>
+          ${folder.chatCount ? `<span>В Telegram списке: <b>${folder.chatCount} чатов</b></span>` : ''}
+        </div>
       </div>
-      <div class="folder-banner-meta">
-        <span>Каналов сохранено: <b>${list.length}</b></span>
-        ${folder.chatCount ? `<span>В Telegram списке: <b>${folder.chatCount} чатов</b></span>` : ''}
+      <div class="folder-banner-actions">
+        ${actionsHtml}
       </div>
     </div>
-    <div class="folder-banner-actions">
-      ${actionsHtml}
+    <div class="folder-quick-add-bar">
+      <div class="folder-quick-add-input-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <input type="text" id="folderQuickAddInput" placeholder="Вставьте @ники каналов через пробел (@YT_cartell @danyavoron_yt)...">
+      </div>
+      <button class="btn-pill primary" id="btnFolderQuickAdd">+ Добавить в папку</button>
     </div>
   `;
+
+  const syncBtn = $('#btnSyncFolderAddlist');
+  if (syncBtn) {
+    syncBtn.onclick = () => syncAddlistFolder(folder.id);
+  }
+
+  const quickAddBtn = $('#btnFolderQuickAdd');
+  const quickAddInp = $('#folderQuickAddInput');
+  const handleQuickAdd = () => {
+    if (!quickAddInp) return;
+    const text = quickAddInp.value.trim();
+    if (!text) {
+      notify('Вставьте @ники или ссылки на каналы');
+      return;
+    }
+    const matches = text.match(/(?:https?:\/\/)?(?:www\.)?(?:t\.me\/|@)?([A-Za-z0-9_]{3,32})/gi) || [];
+    const handles = [...new Set(matches.map(m => m.replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, '').replace(/^@/, '').trim()).filter(h => h && !['addlist', 'joinchat', 'c', 's'].includes(h.toLowerCase())))];
+
+    if (!handles.length) {
+      notify('Не найдены корректные имена каналов');
+      return;
+    }
+
+    notify(`Добавляем ${handles.length} каналов...`);
+    handles.forEach(h => {
+      const norm = normalizeChannel({ handle: h, name: h });
+      if (!norm.folderIds) norm.folderIds = ['all'];
+      if (!norm.folderIds.includes(folder.id)) norm.folderIds.push(folder.id);
+
+      catalog.set(norm.id, norm);
+      const existing = savedChannels.find(c => c.id === norm.id);
+      if (existing) {
+        if (!existing.folderIds) existing.folderIds = ['all'];
+        if (!existing.folderIds.includes(folder.id)) existing.folderIds.push(folder.id);
+      } else {
+        savedChannels.unshift(norm);
+      }
+    });
+
+    quickAddInp.value = '';
+    saveFolders();
+    renderFoldersView();
+    notify(`✅ Добавлено ${handles.length} каналов в папку «${folder.name}»!`);
+
+    // Fetch details & avatars in background
+    handles.forEach(async (h) => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(h)}`);
+        const d = await res.json();
+        if (d.results && d.results.length) {
+          const match = d.results.find(r => (r.handle || '').toLowerCase() === h.toLowerCase()) || d.results[0];
+          if (match) {
+            const ch = savedChannels.find(c => c.id === h.toLowerCase());
+            if (ch) {
+              if (match.name) ch.name = match.name;
+              if (match.avatar) ch.avatar = match.avatar;
+              if (match.memberCount) ch.memberCount = match.memberCount;
+              saveFolders();
+              renderFoldersView();
+            }
+          }
+        }
+      } catch (e) {}
+    });
+  };
+
+  if (quickAddBtn) quickAddBtn.onclick = handleQuickAdd;
+  if (quickAddInp) {
+    quickAddInp.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleQuickAdd();
+      }
+    };
+  }
 
   const searchInput = $('#folderChannelSearchInput');
   if (searchInput) {
@@ -460,16 +550,32 @@ function renderFoldersView() {
   }
 
   if (!list.length) {
+    if (folder.source === 'addlist' && !folder._autoSynced) {
+      folder._autoSynced = true;
+      setTimeout(() => syncAddlistFolder(folder.id), 200);
+    }
+
     cardsList.innerHTML = `
       <div class="empty-box" style="padding: 40px 0; grid-column: 1 / -1;">
         <div class="empty-icon">${esc(folder.icon || '📁')}</div>
-        <div>В папке «${esc(folder.name)}» пока нет сохранённых каналов.</div>
-        <div style="margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-          <button class="btn-pill primary" id="btnGoSearchFromFolder">🔍 Найти каналы в каталоге</button>
+        <div style="font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 6px;">В папке «${esc(folder.name)}» пока нет сохранённых каналов</div>
+        <div style="color: var(--text-dim); max-width: 480px; margin: 0 auto 16px;">
+          ${(folder.source === 'addlist' || folder.slug) 
+            ? `Эта папка импортирована по ссылке Telegram (${folder.chatCount ? folder.chatCount + ' чатов' : 'addlist'}). Нажмите кнопку ниже, чтобы автоматически загрузить каналы:` 
+            : 'Вставьте @ники каналов в строку добавления выше или найдите их в каталоге.'}
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+          ${(folder.source === 'addlist' || folder.slug) ? `<button class="btn-pill primary" id="btnSyncEmptyFolder">⚡ Загрузить каналы из Telegram папки</button>` : ''}
+          <button class="btn-pill" id="btnGoSearchFromFolder">🔍 Найти каналы в каталоге</button>
           ${folder.url ? `<a href="${esc(folder.url)}" target="_blank" rel="noopener" class="btn-pill">Открыть в Telegram ↗</a>` : ''}
         </div>
       </div>
     `;
+
+    const emptySyncBtn = $('#btnSyncEmptyFolder');
+    if (emptySyncBtn) {
+      emptySyncBtn.onclick = () => syncAddlistFolder(folder.id);
+    }
     const goBtn = $('#btnGoSearchFromFolder');
     if (goBtn) {
       goBtn.onclick = () => switchSection('search');
@@ -593,6 +699,31 @@ async function importTelegramAddlist(urlOrSlug, extraHandlesText = '') {
       existing.url = data.url;
     }
 
+    // Auto-save discovered channels into savedChannels and assign to this folder
+    if (data.channels && Array.isArray(data.channels) && data.channels.length > 0) {
+      data.channels.forEach(ch => {
+        const norm = normalizeChannel(ch);
+        if (!norm.folderIds) norm.folderIds = ['all'];
+        if (!norm.folderIds.includes(existing.id)) norm.folderIds.push(existing.id);
+
+        catalog.set(norm.id, norm);
+
+        const existingSaved = savedChannels.find(c => c.id === norm.id);
+        if (existingSaved) {
+          if (!existingSaved.folderIds) existingSaved.folderIds = ['all'];
+          if (!existingSaved.folderIds.includes(existing.id)) {
+            existingSaved.folderIds.push(existing.id);
+          }
+          if (!existingSaved.avatar && norm.avatar) existingSaved.avatar = norm.avatar;
+          if ((!existingSaved.name || existingSaved.name === existingSaved.cleanHandle) && norm.name) {
+            existingSaved.name = norm.name;
+          }
+        } else {
+          savedChannels.unshift(norm);
+        }
+      });
+    }
+
     // Parse any extra handles provided by user
     if (extraHandlesText) {
       const handles = extraHandlesText.match(/@?[A-Za-z0-9_]{3,32}/g) || [];
@@ -615,6 +746,67 @@ async function importTelegramAddlist(urlOrSlug, extraHandlesText = '') {
     return existing;
   } catch (err) {
     notify('Ошибка импорта: ' + err.message, 4000);
+  }
+}
+
+// Sync channels for a Telegram addlist folder
+async function syncAddlistFolder(folderId) {
+  const folder = folders.find(f => f.id === folderId);
+  if (!folder) return;
+  const target = folder.url || folder.slug || (folder.id.startsWith('addlist_') ? folder.id.replace('addlist_', '') : '');
+  if (!target) return;
+
+  const syncBtn = $('#btnSyncFolderAddlist');
+  const emptySyncBtn = $('#btnSyncEmptyFolder');
+  if (syncBtn) { syncBtn.disabled = true; syncBtn.textContent = '⏳ Синхронизация...'; }
+  if (emptySyncBtn) { emptySyncBtn.disabled = true; emptySyncBtn.textContent = '⏳ Загрузка...'; }
+
+  notify(`Загружаем каналы для папки «${folder.name}»...`);
+  try {
+    const res = await fetch(`/api/addlist?url=${encodeURIComponent(target)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Не удалось синхронизировать папку');
+
+    folder.name = data.title || folder.name;
+    folder.chatCount = data.chatCount || folder.chatCount;
+    folder.url = data.url || folder.url;
+    folder.slug = data.slug || folder.slug;
+
+    let addedCount = 0;
+    if (data.channels && Array.isArray(data.channels) && data.channels.length > 0) {
+      data.channels.forEach(ch => {
+        const norm = normalizeChannel(ch);
+        if (!norm.folderIds) norm.folderIds = ['all'];
+        if (!norm.folderIds.includes(folder.id)) norm.folderIds.push(folder.id);
+
+        catalog.set(norm.id, norm);
+
+        const existingSaved = savedChannels.find(c => c.id === norm.id);
+        if (existingSaved) {
+          if (!existingSaved.folderIds) existingSaved.folderIds = ['all'];
+          if (!existingSaved.folderIds.includes(folder.id)) {
+            existingSaved.folderIds.push(folder.id);
+            addedCount++;
+          }
+          if (!existingSaved.avatar && norm.avatar) existingSaved.avatar = norm.avatar;
+          if ((!existingSaved.name || existingSaved.name === existingSaved.cleanHandle) && norm.name) {
+            existingSaved.name = norm.name;
+          }
+        } else {
+          savedChannels.unshift(norm);
+          addedCount++;
+        }
+      });
+    }
+
+    folder._autoSynced = true;
+    saveFolders();
+    renderFoldersView();
+    notify(`✅ Загружено ${data.channels ? data.channels.length : 0} каналов в папку «${folder.name}»!`, 4000);
+  } catch (err) {
+    folder._autoSynced = true;
+    notify(`Ошибка синхронизации: ${err.message}`, 4000);
+    renderFoldersView();
   }
 }
 

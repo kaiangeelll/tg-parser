@@ -258,14 +258,20 @@ def _parse_jina_preview(handle: str, md: str) -> dict:
         end_idx = unique_anchors[i + 1].start() if i + 1 < len(unique_anchors) else len(md_body)
         block = md_body[start_idx:end_idx]
 
-        # Extract images (exclude reactions and avatar)
-        raw_imgs = re.findall(r'!\[[^\]]*\]\((https?://[^)]+)\)', block)
+        # Extract images (strictly exclude reactions, emoji stickers, and avatar)
+        raw_imgs = re.findall(r'!\[([^\]]*)\]\((https?://[^)]+)\)', block)
         images = []
-        for img in raw_imgs:
+        for alt, img in raw_imgs:
             clean_img = re.sub(r'\\([_\-])', r'\1', img)
-            if clean_img != avatar_url and clean_img not in images:
-                if not re.search(r'reaction|emoji|thumb_reaction', clean_img, re.IGNORECASE):
-                    images.append(clean_img)
+            alt_clean = alt.strip()
+            # Exclude if alt contains emoji like 🔥, 👍, ❤️ or reaction/emoji keywords
+            is_reaction = (
+                bool(re.search(r'reaction|emoji|thumb_reaction|sticker', clean_img, re.IGNORECASE)) or
+                bool(re.search(r'reaction|emoji|sticker', alt_clean, re.IGNORECASE)) or
+                bool(re.search(r'[\U00010000-\U0010ffff\u2600-\u27bf]', alt_clean))
+            )
+            if not is_reaction and clean_img != avatar_url and clean_img not in images:
+                images.append(clean_img)
 
         # Views
         views_m = re.search(r'([\d.,]+[KMB]?)\s+views', block, re.IGNORECASE)

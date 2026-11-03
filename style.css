@@ -1565,10 +1565,17 @@ body.modal-open {
   padding: 18px 22px;
   margin-bottom: 22px;
   display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.folder-banner-top {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .folder-banner-left {
@@ -1602,6 +1609,48 @@ body.modal-open {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.folder-quick-add-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.folder-quick-add-input-wrap {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.folder-quick-add-input-wrap:focus-within {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.folder-quick-add-input-wrap input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-main);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.folder-quick-add-input-wrap input::placeholder {
+  color: var(--text-dim);
 }
 
 /* Custom Modal Inputs */

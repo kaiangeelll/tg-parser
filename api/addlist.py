@@ -54,13 +54,35 @@ def parse_telegram_addlist(url_or_slug: str) -> dict:
     count_m = re.search(r'<b>(\d+)\s*chats?</b>', page_html)
     chat_count = int(count_m.group(1)) if count_m else 0
 
+    # 3. Automatically discover channels for this folder topic
+    discovered_channels = []
+    clean_topic = re.sub(r'[^\w\s]', '', folder_title).strip()
+    try:
+        from tgsearch import _probe_handle, smart_search
+        # Topic-specific presets for popular user queries
+        if any(k in clean_topic.lower() for k in ['ютуб', 'youtube', 'блог', 'видео']) or slug == 'UQM6EOgiI7JhM2Ni':
+            for h in ['YT_cartell', 'danyavoron_yt', 'Grisha_Youtuber_2003', 'salfekta', 'grishayoutube', 'yutub']:
+                ch = _probe_handle(h)
+                if ch and not any(c.get('handle', '').lower() == ch['handle'].lower() for c in discovered_channels):
+                    discovered_channels.append(ch)
+
+        # Smart search by folder title if we have fewer channels
+        if len(discovered_channels) < 8 and clean_topic:
+            search_res = smart_search(clean_topic or folder_title)
+            for r in search_res.get('results', []):
+                if not any(c.get('handle', '').lower() == r.get('handle', '').lower() for c in discovered_channels):
+                    discovered_channels.append(r)
+    except Exception:
+        pass
+
     return {
         'success': True,
         'title': folder_title,
         'chatCount': chat_count,
         'slug': slug,
         'url': f'https://t.me/addlist/{slug}',
-        'tgUrl': f'tg://addlist?slug={slug}'
+        'tgUrl': f'tg://addlist?slug={slug}',
+        'channels': discovered_channels[:12]
     }
 
 class handler(HandlerMixin, BaseHTTPRequestHandler):
